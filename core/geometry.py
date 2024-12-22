@@ -19,9 +19,9 @@ def draw_circle(scene, center, radius, pen=None):
         raise ValueError("Радиус должен быть положительным.")
     scene.addEllipse(center.x() - radius, center.y() - radius, radius * 2, radius * 2, pen)
 
-def draw_arc(scene, center, radius, start_angle, span_angle, pen=None):
+def draw_arc(scene, center, radius, start_angle, end_angle, pen=None):
     """
-    Рисует дугу по центру, радиусу и углам.
+    Рисует дугу по центру, радиусу и углам (начальный и конечный).
     """
     if not pen:
         pen = QPen(QColor(255, 0, 0), 2)  # Красный цвет по умолчанию
@@ -33,7 +33,12 @@ def draw_arc(scene, center, radius, start_angle, span_angle, pen=None):
 
     # Углы в 1/16 градуса для QPainterPath
     start_angle_16 = start_angle * 16
-    span_angle_16 = span_angle * 16
+    end_angle_16 = end_angle * 16
+    span_angle_16 = end_angle_16 - start_angle_16
+
+    # Проверка на отрицательный угол
+    if span_angle_16 < 0:
+        span_angle_16 += 360 * 16  # Исправляем, если угол отрицательный
 
     # Создание пути для дуги
     path = QPainterPath()

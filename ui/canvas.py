@@ -179,7 +179,7 @@ class Canvas(QGraphicsView):
                 self.start_point = pos
             elif self.current_tool == "rectangle":
                 self.start_point = pos
-            elif self.current_tool == "arc":
+            elif self.current_tool in {"three_points", "radius_chord"}:
                 if self.arc_method == "three_points":
                     self.points.append(pos)
                     if len(self.points) == 3:
@@ -223,7 +223,7 @@ class Canvas(QGraphicsView):
         if event.buttons() == Qt.MiddleButton:
             pan_view(self, event)
 
-        elif self.current_tool in {"line", "circle", "rectangle", "arc"} and self.start_point:
+        elif self.current_tool in {"line", "circle", "rectangle", "three_points", "radius_chord"} and self.start_point:
             end_point = self.mapToScene(event.pos())
             self.clear_temp_item()
 
@@ -254,7 +254,7 @@ class Canvas(QGraphicsView):
                     abs(height),
                     pen,
                 )
-            elif self.current_tool == "arc":
+            elif self.current_tool in {"three_points", "radius_chord"}:
                 radius = self.distance(self.start_point, end_point)
                 rect = QRectF(self.start_point.x() - radius, self.start_point.y() - radius, radius * 2, radius * 2)
                 self.temp_item = self.scene.addPath(QPainterPath())  # Для временной дуги
@@ -308,7 +308,7 @@ class Canvas(QGraphicsView):
                 self.update_line_style(rect_item)
 
                 self.start_point = None
-            elif self.current_tool == "arc" and self.start_point:
+            elif self.current_tool in {"three_points", "radius_chord"} and self.start_point:
                 radius = self.distance(self.start_point, pos)
                 arc_item = draw_arc(self.scene, self.start_point, radius, 0, 90, pen)  # Ваша функция для рисования дуги
                 self.drawing_items.append(arc_item)
@@ -401,6 +401,13 @@ class Canvas(QGraphicsView):
                 self.points.clear()
                 return
             center, radius, start_angle, span_angle = result
+
+            # Если угол больше 180 градусов, меняем направление дуги
+            if span_angle > 180:
+                span_angle = 360 - span_angle
+                start_angle = (start_angle + 180) % 360
+
+            # Отрисовываем дугу с вычисленными углами
             draw_arc(self.scene, center, radius, start_angle, span_angle, pen)
             self.points.clear()
 
@@ -450,14 +457,14 @@ class Canvas(QGraphicsView):
 
                 # Вычисление угла между центром и конечной точкой хорды
                 angle = degrees(atan2(chord_end.y() - center.y(), chord_end.x() - center.x()))
-                
+
                 # Определяем начальный и конечный угол для дуги
                 start_angle = angle - 90  # Начальный угол
                 end_angle = angle + 90    # Конечный угол для дуги, в зависимости от выбранного радиуса
 
                 # Отрисовываем дугу с заданными углами
-                draw_arc(self.scene, center, radius, start_angle, end_angle, pen)
-            
+                draw_arc(self.scene, center, radius, start_angle, end_angle - start_angle, pen)
+
             self.points.clear()
 
     def prompt_for_radius(self):
