@@ -43,14 +43,14 @@ class ToolBar(QToolBar):
         self.add_tool("Многоугольник", tools_layout, "polygon")
         self.add_tool("Сплайн", tools_layout, "spline")
         self.add_tool("Дуга 3 точки", tools_layout, "three_points")
-        self.add_tool("Дуга по радиусу", tools_layout, "radius_chord")
+        self.add_tool("Дуга по хорде и радиусу", tools_layout, "radius_chord")
 
         layout.addLayout(tools_layout)
 
     def add_tool(self, label, layout, tool_name):
         """Добавление инструмента на панель."""
         button = QPushButton(label, self)
-        button.setFixedSize(120, 30)  # Уменьшаем размер кнопки для компактного отображения
+        button.setFixedSize(160, 30)  # Уменьшаем размер кнопки для компактного отображения
         button.clicked.connect(lambda: self.activate_tool(tool_name))  # Привязываем кнопку к действию
         layout.addWidget(button)  # Добавляем кнопку в layout
 
