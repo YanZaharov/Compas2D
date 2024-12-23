@@ -48,7 +48,6 @@ class Canvas(QGraphicsView):
 
         # Добавляем элементы интерфейса для изменения стилей линий
         self.line_color = QColor(0, 0, 0)
-        self.line_width = 2
 
         # Создание ползунков для изменения угла кривой Безье
         self.angle_slider = QSlider(Qt.Horizontal)
@@ -107,6 +106,8 @@ class Canvas(QGraphicsView):
         for item in self.drawing_items:
             if isinstance(item, QGraphicsLineItem):
                 self.update_line_style(item)
+            elif isinstance(item, QGraphicsPathItem):  # Добавляем обработку дуг
+                self.update_line_style(item)
         
         # Обновляем временные элементы (если они есть)
         if self.temp_item:
@@ -130,10 +131,16 @@ class Canvas(QGraphicsView):
         """Применение стиля линии к графическому элементу."""
         if item is None:
             return  # Если item равен None, не продолжаем
+
         pen = QPen(self.line_color, self.line_thickness)
         pen.setStyle(self.get_pen_style(self.line_type))
-        if self.line_type in ["dashed", "dotted", "dash-dotted"]:
-            pen.setDashOffset(self.dash_spacing)
+
+        if self.line_type == "dash-dot-two-points":  # Обработка нового типа линии
+            # Паттерн для штрих-пунктирной линии с двумя точками
+            pen.setDashPattern([10, 5, 1, 5, 1, 5])  
+
+        if self.line_type in ["dashed", "dotted", "dash-dotted", "dash-dot-two-points"]:
+            pen.setDashOffset(self.dash_spacing)  # Применяем отступы для штрихов
 
         item.setPen(pen)
 
@@ -193,7 +200,7 @@ class Canvas(QGraphicsView):
             elif self.current_tool == "polygon":
                 self.points.append(pos)
                 if len(self.points) > 1:
-                    pen = QPen(self.line_color, self.line_width)
+                    pen = QPen(self.line_color, self.line_thickness)
                     draw_line(self.scene, self.points[-2], self.points[-1], pen)
             elif self.current_tool == "spline":
                 closest_index = self.get_closest_point(pos)
@@ -213,7 +220,7 @@ class Canvas(QGraphicsView):
 
         elif event.button() == Qt.RightButton:
             if self.current_tool == "polygon":
-                pen = QPen(self.line_color, self.line_width)
+                pen = QPen(self.line_color, self.line_thickness)
                 draw_polygon(self.scene, self.points, pen)
                 self.points.clear()
             elif self.current_tool == "spline":
@@ -230,7 +237,10 @@ class Canvas(QGraphicsView):
             pen = QPen(self.line_color, self.line_thickness)  # Цвет и толщина
             pen.setStyle(self.get_pen_style(self.line_type))  # Стиль линии
 
-            if self.line_type in ["dashed", "dotted", "dash-dotted"]:
+            if self.line_type == "dash-dot-two-points":
+                pen.setDashPattern([10, 5, 1, 5, 1, 5])
+
+            if self.line_type in ["dashed", "dotted", "dash-dotted", "dash-dot-two-points"]:
                 pen.setDashOffset(self.dash_spacing)
 
             if self.current_tool == "line":
@@ -276,7 +286,7 @@ class Canvas(QGraphicsView):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
             pos = self.mapToScene(event.pos())
-            pen = QPen(self.line_color, self.line_width)
+            pen = QPen(self.line_color, self.line_thickness)
 
             if self.current_tool == "line" and self.start_point:
                 # Создание линии и добавление ее в сцену
@@ -325,6 +335,8 @@ class Canvas(QGraphicsView):
             return Qt.DotLine
         elif line_type == "dash-dotted":
             return Qt.DashDotLine
+        elif line_type == "dash-dot-two-points":
+            return Qt.CustomDashLine  # Используем произвольный паттерн
         return Qt.SolidLine  # По умолчанию сплошная линия
 
     def clear_temp_item(self):
@@ -345,7 +357,7 @@ class Canvas(QGraphicsView):
         path = generate_bezier_path(self.points)
         if path:
             self.temp_item = QGraphicsPathItem(path)
-            self.temp_item.setPen(QPen(self.line_color, self.line_width))
+            self.temp_item.setPen(QPen(self.line_color, self.line_thickness))
             self.scene.addItem(self.temp_item)
 
     def save_bezier_curve(self):
@@ -353,7 +365,7 @@ class Canvas(QGraphicsView):
             path = generate_bezier_path(self.points)
             if path:
                 final_path = QGraphicsPathItem(path)
-                final_path.setPen(QPen(self.line_color, self.line_width))
+                final_path.setPen(QPen(self.line_color, self.line_thickness))
                 self.spline_paths.append(final_path)
                 self.scene.addItem(final_path)
         self.points.clear()

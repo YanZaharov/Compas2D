@@ -68,6 +68,7 @@ class ToolBar(QToolBar):
         line_style_combo.addItem("Штриховая", "dashed")
         line_style_combo.addItem("Пунктирная", "dotted")
         line_style_combo.addItem("Штрих-пунктирная", "dash-dotted")
+        line_style_combo.addItem("Штрих-пунктирная с двумя точками", "dash-dot-two-points")
         line_style_combo.setCurrentText(self.get_line_type_label(self.line_type))
         line_style_combo.currentTextChanged.connect(lambda: self.change_line_type(line_style_combo.itemData(line_style_combo.currentIndex())))
         style_controls_layout.addWidget(line_style_combo)
@@ -143,6 +144,7 @@ class ToolBar(QToolBar):
     def refresh_scene(self):
         """Перерисовывает сцену с новыми параметрами линии."""
         if self.style_applied:
+            # Обновляем стиль для всех объектов
             self.parent.canvas.update_line_type(self.line_type)
             self.parent.canvas.update_line_thickness(self.line_thickness)
             self.parent.canvas.update_line_dash_spacing(self.dash_spacing)
@@ -154,6 +156,7 @@ class ToolBar(QToolBar):
             "solid": "Сплошная",
             "dashed": "Штриховая",
             "dotted": "Точечная",
-            "dash-dotted": "Штрих-пунктирная"
+            "dash-dotted": "Штрих-пунктирная",
+            "dash-dot-two-points": "Штрих-пунктирная с двумя точками"
         }
         return mapping.get(line_type, "Сплошная")
