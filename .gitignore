@@ -2,3 +2,7 @@ ui/__pycache__
 config/__pycache__
 core/__pycache__
 .venv
+core/__pycache__/geometry.cpython-312.pyc
+core/__pycache__/spline.cpython-312.pyc
+ui/__pycache__/canvas.cpython-312.pyc
+ui/__pycache__/toolbar.cpython-312.pyc

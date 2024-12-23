@@ -1,5 +1,5 @@
-from PyQt5.QtWidgets import QToolBar, QAction, QComboBox, QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QWidget, QColorDialog, QPushButton
-from PyQt5.QtGui import QIcon, QColor
+from PyQt5.QtWidgets import QToolBar, QComboBox, QLineEdit, QHBoxLayout, QVBoxLayout, QWidget, QColorDialog, QPushButton
+from PyQt5.QtGui import QColor
 from PyQt5 import QtGui
 from config.settings import LINE_TYPE, LINE_THICKNESS, DASH_SPACING
 
