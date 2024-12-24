@@ -3,7 +3,7 @@ from PyQt5.QtCore import Qt, QRectF
 from PyQt5.QtGui import QPainter, QPen, QColor, QPainterPath
 from core.geometry import draw_line, draw_polygon
 from core.transformations import pan_view, zoom_view
-from core.spline import generate_bezier_path
+from core.spline import update_bezier_curve, save_bezier_curve
 from core.arc import draw_arc_three_points, draw_arc_radius_chord
 
 class Canvas(QGraphicsView):
@@ -127,7 +127,7 @@ class Canvas(QGraphicsView):
     def set_tool(self, tool):
         # Завершаем текущую работу с инструментом перед переключением
         if self.current_tool == "spline" and self.points:
-            self.save_bezier_curve()
+            save_bezier_curve(self)
 
         self.current_tool = tool
         self.start_point = None
@@ -179,7 +179,7 @@ class Canvas(QGraphicsView):
                         pos.x() - 5, pos.y() - 5, 10, 10, QPen(QColor(0, 0, 0), 2)
                     )
                     self.control_points_items.append(control_point_item)
-                    self.update_bezier_curve()
+                    update_bezier_curve(self)
         elif event.button() == Qt.MiddleButton:
             # Сохраняем позицию для панорамирования
             self.last_mouse_pos = event.pos()
@@ -190,7 +190,7 @@ class Canvas(QGraphicsView):
                 self.points.clear()
             elif self.current_tool == "spline":
                 # Сохраняем текущий сплайн
-                self.save_bezier_curve()
+                save_bezier_curve(self)
 
     def mouseMoveEvent(self, event):
         pen = QPen(self.line_color, self.line_thickness)  # Цвет и толщина
@@ -234,15 +234,14 @@ class Canvas(QGraphicsView):
                 rect = QRectF(self.start_point.x() - radius, self.start_point.y() - radius, radius * 2, radius * 2)
                 self.temp_item = self.scene.addPath(QPainterPath())  # Для временной дуги
 
-        elif self.current_tool == "spline" and self.is_editing:
-            pos = self.mapToScene(event.pos())
-
+        elif self.current_tool == "spline":
             # Проверяем корректность editing_index
             if self.editing_index is not None and 0 <= self.editing_index < len(self.points):
+                pos = self.mapToScene(event.pos())
                 self.points[self.editing_index] = pos
                 control_item = self.control_points_items[self.editing_index]
                 control_item.setRect(pos.x() - 5, pos.y() - 5, 10, 10)
-                self.update_bezier_curve()
+                update_bezier_curve(self)
             else:
                 # Сбрасываем редактирование, если индекс некорректен
                 self.is_editing = False
@@ -308,28 +307,6 @@ class Canvas(QGraphicsView):
             if item.scene():
                 self.scene.removeItem(item)
         self.control_points_items.clear()
-
-    def update_bezier_curve(self):
-        if len(self.points) < 2:
-            return
-        self.clear_temp_item()
-        path = generate_bezier_path(self.points)
-        if path:
-            self.temp_item = QGraphicsPathItem(path)
-            self.temp_item.setPen(QPen(self.line_color, self.line_thickness))
-            self.scene.addItem(self.temp_item)
-
-    def save_bezier_curve(self):
-        if len(self.points) >= 2:
-            path = generate_bezier_path(self.points)
-            if path:
-                final_path = QGraphicsPathItem(path)
-                final_path.setPen(QPen(self.line_color, self.line_thickness))
-                self.spline_paths.append(final_path)
-                self.scene.addItem(final_path)
-        self.points.clear()
-        self.clear_control_points()
-        self.clear_temp_item()
 
     def draw_grid(self):
         grid_size = 20

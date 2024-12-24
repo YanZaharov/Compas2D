@@ -1,3 +1,5 @@
+from PyQt5.QtWidgets import QGraphicsPathItem
+from PyQt5.QtGui import QPen
 from math import factorial
 
 def binomial_coefficient(n, k):
@@ -30,3 +32,25 @@ def generate_bezier_path(points, num_segments=100):
         path.lineTo(x, y)
     
     return path
+
+def update_bezier_curve(self):
+    if len(self.points) < 2:
+        return
+    self.clear_temp_item()
+    path = generate_bezier_path(self.points)
+    if path:
+        self.temp_item = QGraphicsPathItem(path)
+        self.temp_item.setPen(QPen(self.line_color, self.line_thickness))
+        self.scene.addItem(self.temp_item)
+
+def save_bezier_curve(self):
+    if len(self.points) >= 2:
+        path = generate_bezier_path(self.points)
+        if path:
+            final_path = QGraphicsPathItem(path)
+            final_path.setPen(QPen(self.line_color, self.line_thickness))
+            self.spline_paths.append(final_path)
+            self.scene.addItem(final_path)
+    self.points.clear()
+    self.clear_control_points()
+    self.clear_temp_item()
