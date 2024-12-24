@@ -1,29 +1,53 @@
-from PyQt5.QtCore import QPointF
-from PyQt5.QtGui import QPen, QColor
-from math import atan2, degrees
-from PyQt5.QtWidgets import QInputDialog
-from PyQt5.QtGui import QPainterPath
-from PyQt5.QtCore import QRectF
-from PyQt5.QtCore import Qt
+import math
+from PyQt5.QtCore import QPointF, Qt
+from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QDoubleSpinBox, QPushButton, QMessageBox
+from PyQt5.QtGui import QPen, QColor, QPainterPath
+from math import atan2
+
+class RadiusDialog(QDialog):
+    def __init__(self, min_radius, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Введите радиус")
+        self.setMinimumWidth(300)
+        self.resize(300, 80)
+
+        layout = QVBoxLayout(self)
+
+        self.label = QLabel(f"Радиус (минимум {min_radius:.2f}):", self)
+        layout.addWidget(self.label)
+
+        self.spin_box = QDoubleSpinBox(self)
+        self.spin_box.setRange(min_radius, 10000)
+        self.spin_box.setValue(min_radius)
+        self.spin_box.setDecimals(2)
+        layout.addWidget(self.spin_box)
+
+        self.ok_button = QPushButton("OK", self)
+        layout.addWidget(self.ok_button)
+
+        self.ok_button.clicked.connect(self.accept)
+
+    def get_radius(self):
+        return self.spin_box.value()
 
 
 def draw_arc_three_points(scene, points, pen):
     """
     Рисует дугу через три точки.
     """
-    if len(points) == 3:
-        result = calculate_arc_three_points(points)
-        if result[0] is None:
-            print("Не удалось вычислить дугу: точки могут быть на одной линии.")
-            return None
-        center, radius, start_angle, span_angle = result
+    if len(points) != 3:
+        print("Нужно указать три точки для построения дуги.")
+        return None
 
-        # Если угол больше 180 градусов, меняем направление дуги
-        if span_angle > 180:
-            span_angle = 360 - span_angle
-            start_angle = (start_angle + 180) % 360
+    result = calculate_arc_three_points(points)
+    if result[0] is None:
+        print("Не удалось вычислить дугу: точки могут быть на одной линии.")
+        return None
 
-        return draw_arc(scene, center, radius, start_angle, span_angle, pen)
+    center, radius, start_angle, end_angle = result
+
+    # Рисуем дугу, используя параметрическое уравнение окружности
+    return draw_arc_using_parametric_equation(scene, center, radius, start_angle, end_angle, pen)
 
 
 def calculate_arc_three_points(points):
@@ -49,49 +73,95 @@ def calculate_arc_three_points(points):
     center = QPointF(mid1.x() + t * norm1.x(), mid1.y() + t * norm1.y())
 
     # Вычисляем радиус
-    radius = ((center.x() - p1.x()) ** 2 + (center.y() - p1.y()) ** 2) ** 0.5
+    radius = distance(center, p1)
 
     # Углы
-    start_angle = degrees(atan2(p1.y() - center.y(), p1.x() - center.x()))
-    end_angle = degrees(atan2(p3.y() - center.y(), p3.x() - center.x()))
-    span_angle = end_angle - start_angle
-    if span_angle < 0:
-        span_angle += 360
+    start_angle = math.degrees(atan2(p1.y() - center.y(), p1.x() - center.x()))
+    end_angle = math.degrees(atan2(p3.y() - center.y(), p3.x() - center.x()))
 
-    return center, radius, start_angle, span_angle
+    return center, radius, start_angle, end_angle
 
 
 def draw_arc_radius_chord(scene, points, pen):
     """
     Рисует дугу по радиусу и хорде.
     """
-    if len(points) == 2:
-        center = points[0]
-        chord_end = points[1]
-        radius = prompt_for_radius()
+    if len(points) != 2:
+        print("Нужно указать две точки: центр и конец хорды.")
+        return None
 
-        if radius is not None:
-            dist = distance(center, chord_end)
-            if radius < dist:
-                print(f"Радиус {radius} меньше расстояния от центра {dist}, попробуйте снова.")
-                return None
+    center, chord_end = points
+    min_radius = distance(center, chord_end)
 
-            # Вычисление угла между центром и конечной точкой хорды
-            angle = degrees(atan2(chord_end.y() - center.y(), chord_end.x() - center.x()))
+    # Ожидаем ввода радиуса через кастомный диалог
+    dialog = RadiusDialog(min_radius)
+    if dialog.exec_() != QDialog.Accepted:
+        return None
 
-            # Определяем начальный и конечный угол для дуги
-            start_angle = angle - 90  # Начальный угол
-            end_angle = angle + 90    # Конечный угол для дуги
+    radius = dialog.get_radius()
 
-            return draw_arc(scene, center, radius, start_angle, end_angle - start_angle, pen)
+    # Рассчитываем угол хорды относительно центра
+    chord_angle = math.degrees(math.atan2(chord_end.y() - center.y(), chord_end.x() - center.x()))
 
+    # Позиция начальной точки дуги относительно центра окружности и радиуса
+    start_x = center.x() + radius * math.cos(math.radians(chord_angle))
+    start_y = center.y() + radius * math.sin(math.radians(chord_angle))
+    start_point = QPointF(start_x, start_y)
 
-def prompt_for_radius():
+    # Определяем угол начальной и конечной точек
+    start_angle = chord_angle
+    end_angle = start_angle + 180  # угол на противоположной стороне окружности
+
+    # Проверка на направление дуги
+    if start_angle > end_angle:
+        # Если начальный угол больше конечного, значит дуга по часовой стрелке
+        start_angle, end_angle = end_angle, start_angle
+
+    # Рисуем дугу, используя параметрическое уравнение окружности
+    return draw_arc_using_parametric_equation(scene, center, radius, start_angle, end_angle, pen)
+
+def draw_arc_using_parametric_equation(scene, center, radius, start_angle, end_angle, pen=None):
     """
-    Реализует диалог для ввода радиуса.
+    Рисует дугу с использованием параметрического уравнения окружности.
     """
-    radius, ok = QInputDialog.getDouble(None, "Введите радиус", "Радиус:", 50, 1, 10000, 2)
-    return radius if ok else None
+    if radius <= 0:
+        print("Радиус должен быть положительным.")
+        return None
+
+    # Преобразуем углы в радианы
+    start_angle_rad = math.radians(start_angle)
+    end_angle_rad = math.radians(end_angle)
+
+    # Инициализируем путь для дуги
+    path = QPainterPath()
+
+    # Вычислим несколько точек на дуге
+    num_points = 100  # Количество точек для дуги
+    for i in range(num_points + 1):
+        # Вычисляем угол на текущем шаге
+        t = i / num_points
+        angle = start_angle_rad + t * (end_angle_rad - start_angle_rad)
+
+        # Параметрическое уравнение окружности
+        x = center.x() + radius * math.cos(angle)
+        y = center.y() + radius * math.sin(angle)
+
+        point = QPointF(x, y)
+
+        if i == 0:
+            path.moveTo(point)  # Начальная точка дуги
+        else:
+            path.lineTo(point)  # Соединяем точки на дуге
+
+    # Добавляем путь на сцену
+    scene.addPath(path, pen)
+
+
+def points_are_equal(point1, point2, tolerance=1e-6):
+    """
+    Сравнивает две точки с учетом погрешности (tolerance).
+    """
+    return abs(point1.x() - point2.x()) < tolerance and abs(point1.y() - point2.y()) < tolerance
 
 
 def distance(point1, point2):
@@ -99,27 +169,3 @@ def distance(point1, point2):
     Вычисляет расстояние между двумя точками.
     """
     return ((point1.x() - point2.x()) ** 2 + (point1.y() - point2.y()) ** 2) ** 0.5
-
-
-def draw_arc(scene, center, radius, start_angle, span_angle, pen=None):
-    """
-    Рисует дугу по центру, радиусу и углам.
-    """
-    if not pen:
-        pen = QPen(QColor(255, 0, 0), 2)  # Красный цвет по умолчанию
-    if radius <= 0:
-        raise ValueError("Радиус должен быть положительным.")
-
-    # Создание прямоугольника для дуги
-    rect = QRectF(center.x() - radius, center.y() - radius, radius * 2, radius * 2)
-
-    # Углы в 1/16 градуса для QPainterPath
-    start_angle_16 = start_angle * 16
-    span_angle_16 = span_angle * 16
-
-    # Создание пути для дуги
-    path = QPainterPath()
-    path.arcTo(rect, start_angle_16, span_angle_16)
-
-    # Добавление пути на сцену
-    scene.addPath(path, pen)
