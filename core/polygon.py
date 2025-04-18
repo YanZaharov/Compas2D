@@ -11,7 +11,7 @@ class Polygon(Geometry):
         if len(self.points) < 3:
             return
         super().draw(painter, pen)
-        painter.drawPolygon(*self.points)
+        painter.drawPolygon(self.points)
 
     def get_total_length(self):
         if len(self.points) < 2:

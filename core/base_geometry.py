@@ -1,8 +1,8 @@
-from PyQt5.QtGui import QPen, QColor
-from PyQt5.QtCore import Qt
+from PySide6.QtGui import QPen, QColor
+from PySide6.QtCore import Qt
 import math
-from PyQt5.QtCore import QPointF
-from PyQt5.QtCore import QRectF
+from PySide6.QtCore import QPointF
+from PySide6.QtCore import QRectF
 
 # Базовый класс для всех фигур
 class Geometry:

@@ -1,9 +1,11 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QInputDialog, QStatusBar, QDockWidget, QMessageBox
-from PyQt5.QtCore import Qt
+from PySide6.QtWidgets import (QApplication, QMainWindow, QInputDialog, QStatusBar,QDockWidget, QMessageBox, QFileDialog, QLabel)
+from PySide6.QtGui import QAction
+from PySide6.QtCore import Qt
 from ui.canvas import Canvas
 from ui.objects_tree import ConstructionTree
-from PyQt5.QtWidgets import QColorDialog
+from PySide6.QtGui import QColor
+from dxf_handler import save_to_dxf, read_from_dxf
 
 # Константы для строковых значений
 COORD_SYSTEMS = {'cartesian': 'Декартова', 'polar': 'Полярная'}
@@ -37,6 +39,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Compas 2D")
         self.setGeometry(100, 100, 1600, 1000)
         self.is_dark_theme = False  # По умолчанию светлая тема
+        self.current_file = None  # Track the current file
         self.initUI()
 
     def initUI(self):
@@ -53,8 +56,8 @@ class MainWindow(QMainWindow):
             "Размер сетки",
             "Введите размер ячейки сетки:",
             value=self.canvas.grid_size,
-            min=10,
-            max=200
+            minValue=10,
+            maxValue=200
         )
         if ok:
             self.canvas.grid_size = size
@@ -69,33 +72,38 @@ class MainWindow(QMainWindow):
             # Устанавливаем темный цвет для заголовка
             DWMWA_CAPTION_COLOR = 35
             from ctypes import windll, c_int, byref, sizeof
-            windll.dwmapi.DwmSetWindowAttribute(
-                hwnd, 
-                DWMWA_CAPTION_COLOR,
-                byref(c_int(0x1e1e1e)), # Темно-серый цвет
-                sizeof(c_int)
-            )
+            try:
+                windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd, 
+                    DWMWA_CAPTION_COLOR,
+                    byref(c_int(0x1e1e1e)), # Темно-серый цвет
+                    sizeof(c_int)
+                )
+            except Exception:
+                pass  # Игнорируем ошибки для совместимости с разными платформами
+                
             self.setStyleSheet("""
                 QMainWindow {
-                    background-color: #1e1e1e;
+                    background-color: #121212;
                     color: #ffffff;
                 }
                 QMenuBar {
-                    background-color: #2d2d2d;
+                    background-color: #1e1e1e;
                     color: #ffffff;
                     border-bottom: 1px solid #3d3d3d;
                 }
                 QMenuBar::item {
                     padding: 8px 12px;
                     background-color: transparent;
+                    color: #ffffff;
                     border-radius: 4px;
                 }
                 QMenuBar::item:selected {
-                    background-color: #3d3d3d;
+                    background-color: #2979ff;
                     color: #ffffff;
                 }
                 QMenu {
-                    background-color: #2d2d2d;
+                    background-color: #1e1e1e;
                     color: #ffffff;
                     border: 1px solid #3d3d3d;
                     padding: 5px;
@@ -104,13 +112,14 @@ class MainWindow(QMainWindow):
                     padding: 8px 25px;
                     border-radius: 4px;
                     margin: 2px 4px;
+                    color: #ffffff;
                 }
                 QMenu::item:selected {
-                    background-color: #3d3d3d;
+                    background-color: #2979ff;
                     color: #ffffff;
                 }
                 QStatusBar {
-                    background-color: #2d2d2d;
+                    background-color: #1e1e1e;
                     color: #ffffff;
                     border-top: 1px solid #3d3d3d;
                 }
@@ -119,42 +128,124 @@ class MainWindow(QMainWindow):
                     border: 1px solid #3d3d3d;
                 }
                 QDockWidget::title {
-                    background-color: #2d2d2d;
+                    background-color: #1e1e1e;
                     padding: 8px;
+                    color: #ffffff;
                 }
-                QLabel{
+                QLabel {
                     color: #ffffff;
                 }
                 QTreeWidget {
-                    background-color: #2d2d2d;
+                    background-color: #1e1e1e;
                     border: 1px solid #3d3d3d;
+                    color: #ffffff;
+                }
+                QTreeWidget::item {
+                    color: #ffffff;
                 }
                 QTreeWidget::item:selected {
-                    background-color: #3d3d3d;
+                    background-color: #2979ff;
+                    color: #ffffff;
                 }
-                QInputDialog, QMessageBox {
-                    background-color: #2d2d2d;
+                QInputDialog, QMessageBox, QDialog {
+                    background-color: #1e1e1e;
+                    color: #ffffff;
+                }
+                QInputDialog QLabel, QMessageBox QLabel, QDialog QLabel {
                     color: #ffffff;
                 }
                 QPushButton {
-                    background-color: #3d3d3d;
+                    background-color: #2979ff;
                     color: #ffffff;
-                    border: 1px solid #4d4d4d;
+                    border: none;
                     border-radius: 4px;
-                    padding: 6px 12px;
+                    padding: 8px 16px;
+                    font-weight: bold;
                 }
                 QPushButton:hover {
-                    background-color: #4d4d4d;
+                    background-color: #448aff;
                 }
                 QPushButton:pressed {
-                    background-color: #5d5d5d;
+                    background-color: #2962ff;
                 }
-                QLineEdit, QSpinBox, QDoubleSpinBox {
-                    background-color: #3d3d3d;
+                QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+                    background-color: #2d2d2d;
                     color: #ffffff;
-                    border: 1px solid #4d4d4d;
+                    border: 1px solid #3d3d3d;
                     border-radius: 4px;
                     padding: 5px;
+                    selection-background-color: #2979ff;
+                    selection-color: #ffffff;
+                }
+                QComboBox::drop-down {
+                    border: 0px;
+                    background-color: #2979ff;
+                    width: 20px;
+                }
+                QComboBox::down-arrow {
+                    width: 14px;
+                    height: 14px;
+                    color: #ffffff;
+                }
+                QComboBox QAbstractItemView {
+                    background-color: #2d2d2d;
+                    color: #ffffff;
+                    selection-background-color: #2979ff;
+                    selection-color: #ffffff;
+                }
+                QToolTip {
+                    background-color: #1e1e1e;
+                    color: #ffffff;
+                    border: 1px solid #3d3d3d;
+                }
+                QTabWidget::pane {
+                    border: 1px solid #3d3d3d;
+                }
+                QTabBar::tab {
+                    background-color: #1e1e1e;
+                    color: #b0b0b0;
+                    padding: 8px 16px;
+                    border: 1px solid #3d3d3d;
+                    border-bottom: none;
+                }
+                QTabBar::tab:selected {
+                    background-color: #2d2d2d;
+                    color: #ffffff;
+                }
+                QTabBar::tab:!selected {
+                    margin-top: 2px;
+                }
+                QHeaderView::section {
+                    background-color: #1e1e1e;
+                    color: #ffffff;
+                    padding: 5px;
+                    border: 1px solid #3d3d3d;
+                }
+                QScrollBar:vertical {
+                    background-color: #1e1e1e;
+                    width: 12px;
+                    margin: 0px;
+                }
+                QScrollBar::handle:vertical {
+                    background-color: #3d3d3d;
+                    min-height: 20px;
+                    border-radius: 6px;
+                }
+                QScrollBar::handle:vertical:hover {
+                    background-color: #4d4d4d;
+                }
+                QScrollBar:horizontal {
+                    background-color: #1e1e1e;
+                    height: 12px;
+                    margin: 0px;
+                }
+                QScrollBar::handle:horizontal {
+                    background-color: #3d3d3d;
+                    min-width: 20px;
+                    border-radius: 6px;
+                }
+                QScrollBar::handle:horizontal:hover {
+                    background-color: #4d4d4d;
                 }
             """)
         else:
@@ -164,24 +255,31 @@ class MainWindow(QMainWindow):
             # Возвращаем стандартный цвет заголовка
             DWMWA_CAPTION_COLOR = 35
             from ctypes import windll, c_int, byref, sizeof
-            windll.dwmapi.DwmSetWindowAttribute(
-                hwnd, 
-                DWMWA_CAPTION_COLOR,
-                byref(c_int(-1)), # Сброс к системному цвету
-                sizeof(c_int)
-            )
+            try:
+                windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd, 
+                    DWMWA_CAPTION_COLOR,
+                    byref(c_int(-1)), # Сброс к системному цвету
+                    sizeof(c_int)
+                )
+            except Exception:
+                pass  # Игнорируем ошибки для совместимости с разными платформами
+                
             self.setStyleSheet("""
                 QMainWindow {
                     background-color: #f5f5f5;
+                    color: #333333;
                 }
                 QMenuBar {
                     background-color: #ffffff;
                     border-bottom: 1px solid #e0e0e0;
+                    color: #333333;
                 }
                 QMenuBar::item {
                     padding: 8px 12px;
                     background-color: transparent;
                     border-radius: 4px;
+                    color: #333333;
                 }
                 QMenuBar::item:selected {
                     background-color: #e3f2fd;
@@ -191,11 +289,13 @@ class MainWindow(QMainWindow):
                     background-color: #ffffff;
                     border: 1px solid #e0e0e0;
                     padding: 5px;
+                    color: #333333;
                 }
                 QMenu::item {
                     padding: 8px 25px;
                     border-radius: 4px;
                     margin: 2px 4px;
+                    color: #333333;
                 }
                 QMenu::item:selected {
                     background-color: #e3f2fd;
@@ -208,25 +308,42 @@ class MainWindow(QMainWindow):
                 }
                 QDockWidget {
                     border: 1px solid #e0e0e0;
+                    color: #333333;
                 }
                 QDockWidget::title {
                     background-color: #f5f5f5;
                     padding: 8px;
+                    color: #333333;
+                }
+                QLabel {
+                    color: #333333;
                 }
                 QTreeWidget {
                     background-color: #ffffff;
                     border: 1px solid #e0e0e0;
+                    color: #333333;
+                }
+                QTreeWidget::item {
+                    color: #333333;
                 }
                 QTreeWidget::item:selected {
                     background-color: #e3f2fd;
                     color: #1976d2;
+                }
+                QDialog, QInputDialog, QMessageBox {
+                    background-color: #ffffff;
+                    color: #333333;
+                }
+                QDialog QLabel, QInputDialog QLabel, QMessageBox QLabel {
+                    color: #333333;
                 }
                 QPushButton {
                     background-color: #ffffff;
                     border: 1px solid #e0e0e0;
                     border-radius: 4px;
                     padding: 6px 12px;
-                    color: #424242;
+                    color: #333333;
+                    font-weight: normal;
                 }
                 QPushButton:hover {
                     background-color: #f5f5f5;
@@ -236,40 +353,89 @@ class MainWindow(QMainWindow):
                 QPushButton:pressed {
                     background-color: #e3f2fd;
                 }
-                QLineEdit, QSpinBox, QDoubleSpinBox {
+                QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
                     background-color: #ffffff;
                     border: 1px solid #e0e0e0;
                     border-radius: 4px;
                     padding: 5px;
+                    color: #333333;
+                }
+                QComboBox::drop-down {
+                    border: 0px;
+                }
+                QComboBox QAbstractItemView {
+                    background-color: #ffffff;
+                    color: #333333;
+                    selection-background-color: #e3f2fd;
+                    selection-color: #1976d2;
                 }
             """)
-
 
     def createMenus(self):
         mainMenu = self.menuBar()
 
-        # Добавляем кнопку переключения темы
+        # Create File menu
+        fileMenu = mainMenu.addMenu('Файл')
+        
+        # New action
+        newAction = QAction('Новый', self)
+        newAction.setShortcut('Ctrl+N')
+        newAction.setStatusTip('Создать новый файл')
+        newAction.triggered.connect(self.newFile)
+        fileMenu.addAction(newAction)
+        
+        # Open DXF action
+        openDxfAction = QAction('Открыть DXF...', self)
+        openDxfAction.setShortcut('Ctrl+O')
+        openDxfAction.setStatusTip('Открыть файл DXF')
+        openDxfAction.triggered.connect(self.openDxfFile)
+        fileMenu.addAction(openDxfAction)
+        
+        # Save action
+        saveAction = QAction('Сохранить', self)
+        saveAction.setShortcut('Ctrl+S')
+        saveAction.setStatusTip('Сохранить файл')
+        saveAction.triggered.connect(self.saveFile)
+        fileMenu.addAction(saveAction)
+        
+        # Save As action
+        saveAsAction = QAction('Сохранить как...', self)
+        saveAsAction.setShortcut('Ctrl+Shift+S')
+        saveAsAction.setStatusTip('Сохранить файл как...')
+        saveAsAction.triggered.connect(self.saveFileAs)
+        fileMenu.addAction(saveAsAction)
+        
+        fileMenu.addSeparator()
+        
+        # Exit action
+        exitAction = QAction('Выход', self)
+        exitAction.setShortcut('Ctrl+Q')
+        exitAction.setStatusTip('Выйти из программы')
+        exitAction.triggered.connect(self.close)
+        fileMenu.addAction(exitAction)
+
+        # Add theme toggle button
         themeAction = QAction('Сменить тему', self)
         themeAction.setStatusTip("Переключить между светлой и темной темой")
         themeAction.triggered.connect(self.toggleTheme)
         mainMenu.addAction(themeAction)
 
-        # Добавляем меню для работы с сеткой
+        # Add grid menu
         gridMenu = mainMenu.addMenu('Сетка')
 
-        # Кнопка показать/скрыть сетку
+        # Grid toggle button
         gridAction = QAction('Показать/скрыть сетку', self)
         gridAction.setStatusTip("Переключить отображение сетки")
         gridAction.triggered.connect(self.toggleGrid)
         gridMenu.addAction(gridAction)
 
-        # Кнопка изменения размера сетки
+        # Grid size button
         gridSizeAction = QAction('Размер сетки', self)
         gridSizeAction.setStatusTip("Изменить размер ячейки сетки")
         gridSizeAction.triggered.connect(self.setGridSize)
         gridMenu.addAction(gridSizeAction)
         
-        # Остальные меню
+        # Other menus
         self.createDrawingObjectsMenu(mainMenu)
         self.createLineSettingsMenu(mainMenu)
         self.createShapeSettingsMenu(mainMenu)
@@ -284,6 +450,10 @@ class MainWindow(QMainWindow):
     def toggleTheme(self):
         self.is_dark_theme = not self.is_dark_theme
         self.applyTheme()
+
+        if hasattr(self, 'constructionTree'):
+            self.constructionTree.updateThemeStyles(self.is_dark_theme)
+
         theme_name = "темную" if self.is_dark_theme else "светлую"
         self.statusBar.showMessage(f"Тема переключена на {theme_name}")
 
@@ -335,6 +505,7 @@ class MainWindow(QMainWindow):
         shapeSettingsMenu.addAction(lineThicknessAction)
     
     def chooseColor(self):
+        from PySide6.QtWidgets import QColorDialog
         color = QColorDialog.getColor(Qt.black, self, "Выберите цвет")
         if color.isValid():
             self.canvas.currentColor = color
@@ -363,6 +534,10 @@ class MainWindow(QMainWindow):
     def createStatusBar(self):
         self.statusBar = QStatusBar()
         self.setStatusBar(self.statusBar)
+        
+        # Add file name label to status bar
+        self.fileNameLabel = QLabel("Новый файл")
+        self.statusBar.addPermanentWidget(self.fileNameLabel)
 
     def handleManualInput(self):
         self.canvas.handle_manual_input()  # Вызываем метод handle_manual_input из Canvas
@@ -378,7 +553,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Система координат ввода", "Ввод координат будет производиться в Полярной системе.")
 
     def setDrawingMode(self, mode):
-        self.canvas.drawingMode = mode
+        self.canvas.setDrawingMode(mode)
         self.statusBar.showMessage(f"Режим рисования: {DRAWING_MODES[mode]}")
 
     def setLineType(self, line_type):
@@ -386,7 +561,8 @@ class MainWindow(QMainWindow):
         self.statusBar.showMessage(f"Установлен тип линии: {LINE_TYPES[line_type]}")
 
     def setLineThickness(self):
-        thickness, ok = QInputDialog.getDouble(self, "Толщина линии", "Введите толщину линии:", value=self.canvas.lineThickness, min=0.1, decimals=1)
+        thickness, ok = QInputDialog.getDouble(self, "Толщина линии", "Введите толщину линии:", 
+                                            self.canvas.lineThickness, 0.1, 10.0, 1)
         if ok:
             self.canvas.lineThickness = thickness
             self.statusBar.showMessage(f"Толщина линии установлена: {thickness}")
@@ -399,9 +575,160 @@ class MainWindow(QMainWindow):
         self.canvas.rotate(-10)
         self.statusBar.showMessage("Поворот по часовой стрелке")
 
+    # New file handling methods
+    def newFile(self):
+        # Check if there are unsaved changes
+        if self.canvas.shapes and self.confirmSaveChanges():
+            # Save current file if user wants to
+            self.saveFile()
+            
+        # Clear canvas
+        self.canvas.shapes.clear()
+        self.canvas.update()
+        self.constructionTree.updateConstructionTree()
+        
+        # Reset current file
+        self.current_file = None
+        self.fileNameLabel.setText("Новый файл")
+        self.statusBar.showMessage("Создан новый файл")
+    
+    def openDxfFile(self):
+        # Check if there are unsaved changes
+        if self.canvas.shapes and self.confirmSaveChanges():
+            # Save current file if user wants to
+            self.saveFile()
+        
+        # Open file dialog
+        options = QFileDialog.Options()
+        filename, _ = QFileDialog.getOpenFileName(
+            self, 
+            "Открыть DXF файл", 
+            "", 
+            "DXF Files (*.dxf);;All Files (*)", 
+            options=options
+        )
+        
+        if filename:
+            try:
+                # Clear current shapes
+                self.canvas.shapes.clear()
+                
+                # Load shapes from DXF file
+                loaded_shapes = read_from_dxf(filename, self.canvas)
+                
+                # Add loaded shapes to canvas
+                if loaded_shapes:
+                    self.canvas.shapes.extend(loaded_shapes)
+                    self.canvas.update()
+                    self.constructionTree.updateConstructionTree()
+                    
+                    # Update current file
+                    self.current_file = filename
+                    self.fileNameLabel.setText(f"Файл: {self.getFileNameFromPath(filename)}")
+                    self.statusBar.showMessage(f"Загружен файл: {filename}")
+                else:
+                    QMessageBox.warning(self, "Ошибка загрузки", "Не удалось загрузить фигуры из файла.")
+            except Exception as e:
+                QMessageBox.critical(self, "Ошибка загрузки", f"Произошла ошибка при загрузке файла:\n{str(e)}")
+    
+    def saveFile(self):
+        # If no current file, use save as
+        if not self.current_file:
+            return self.saveFileAs()
+        
+        # Save to current file
+        try:
+            success = save_to_dxf(self.canvas.shapes, self.current_file)
+            if success:
+                self.statusBar.showMessage(f"Файл сохранен: {self.current_file}")
+                return True
+            else:
+                QMessageBox.warning(self, "Ошибка сохранения", "Не удалось сохранить файл.")
+                return False
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка сохранения", f"Произошла ошибка при сохранении файла:\n{str(e)}")
+            return False
+    
+    def saveFileAs(self):
+        # Open file dialog
+        options = QFileDialog.Options()
+        filename, _ = QFileDialog.getSaveFileName(
+            self, 
+            "Сохранить как DXF файл", 
+            "", 
+            "DXF Files (*.dxf)", 
+            options=options
+        )
+        
+        if filename:
+            # Add .dxf extension if not present
+            if not filename.lower().endswith('.dxf'):
+                filename += '.dxf'
+                
+            # Save to file
+            try:
+                success = save_to_dxf(self.canvas.shapes, filename)
+                if success:
+                    self.current_file = filename
+                    self.fileNameLabel.setText(f"Файл: {self.getFileNameFromPath(filename)}")
+                    self.statusBar.showMessage(f"Файл сохранен: {filename}")
+                    return True
+                else:
+                    QMessageBox.warning(self, "Ошибка сохранения", "Не удалось сохранить файл.")
+                    return False
+            except Exception as e:
+                QMessageBox.critical(self, "Ошибка сохранения", f"Произошла ошибка при сохранении файла:\n{str(e)}")
+                return False
+        
+        return False
+    
+    def confirmSaveChanges(self):
+        """Ask the user whether to save changes to the current file"""
+        reply = QMessageBox.question(
+            self, 
+            "Несохраненные изменения", 
+            "Сохранить изменения в текущем файле?",
+            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+            QMessageBox.Save
+        )
+        
+        if reply == QMessageBox.Save:
+            return True
+        elif reply == QMessageBox.Discard:
+            return False
+        else:  # Cancel
+            return None
+    
+    def getFileNameFromPath(self, path):
+        """Extract just the file name from a path"""
+        import os
+        return os.path.basename(path)
+    
+    def closeEvent(self, event):
+        """Handle application close event"""
+        if self.canvas.shapes and self.confirmSaveChanges():
+            if self.saveFile():
+                event.accept()
+            else:
+                # If save failed, ask if they want to quit anyway
+                reply = QMessageBox.question(
+                    self, 
+                    "Ошибка сохранения", 
+                    "Не удалось сохранить файл. Выйти без сохранения?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                
+                if reply == QMessageBox.Yes:
+                    event.accept()
+                else:
+                    event.ignore()
+        else:
+            event.accept()
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
