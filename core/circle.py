@@ -1,5 +1,5 @@
 import math
-from PyQt5.QtCore import QRectF, QPointF
+from PySide6.QtCore import QRectF, QPointF
 from core.base_geometry import Geometry
 
 class Circle(Geometry):

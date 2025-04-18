@@ -1,6 +1,6 @@
 import math
-from PyQt5.QtWidgets import QInputDialog, QMessageBox
-from PyQt5.QtCore import QPointF, QRectF, QSizeF
+from PySide6.QtWidgets import QInputDialog, QMessageBox
+from PySide6.QtCore import QPointF, QRectF, QSizeF
 from core.line import Line
 from core.circle import Circle, CircleByThreePoints
 from core.arc import ArcByThreePoints, ArcByRadiusChord
@@ -446,7 +446,7 @@ def handle_manual_input(self):
                                     "Некорректный ввод координат. Пожалуйста, введите два числа, разделенных пробелом.")
                 return
         if self.numSides == 0:
-            numSides, ok = QInputDialog.getInt(self, "Количество сторон", "Введите количество сторон:", min=3)
+            numSides, ok = QInputDialog.getInt(self, "Количество сторон", "Введите количество сторон:", 3, 3, 100, 1)
             if ok:
                 self.numSides = numSides
             else:

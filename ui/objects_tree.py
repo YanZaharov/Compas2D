@@ -1,15 +1,16 @@
-from PyQt5.QtWidgets import (QDockWidget, QTreeWidget, QTreeWidgetItem, QMenu, 
-                           QAction, QInputDialog, QMessageBox, QVBoxLayout, 
+from PySide6.QtWidgets import (QDockWidget, QTreeWidget, QTreeWidgetItem, QMenu, 
+                           QInputDialog, QMessageBox, QVBoxLayout, 
                            QWidget, QLabel, QPushButton, QHBoxLayout)
-from PyQt5.QtCore import Qt, QPointF, QRectF, QSizeF
-from PyQt5.QtGui import QColor, QFont  
+from PySide6.QtGui import QAction
+from PySide6.QtCore import Qt, QPointF, QRectF, QSizeF
+from PySide6.QtGui import QColor, QFont  
 from core.line import Line
 from core.circle import Circle, CircleByThreePoints
 from core.arc import ArcByThreePoints, ArcByRadiusChord
 from core.polygon import Polygon
 from core.rectangle import Rectangle
 from core.spline import BezierSpline, SegmentSpline
-from PyQt5.QtWidgets import QTreeWidgetItemIterator
+from PySide6.QtWidgets import QTreeWidgetItemIterator
 
 class ConstructionTree(QDockWidget):
     def __init__(self, parent, canvas):
@@ -48,38 +49,6 @@ class ConstructionTree(QDockWidget):
         self.treeWidget.setAlternatingRowColors(True)
         self.treeWidget.setFont(QFont("Arial", 10))
         
-        # Устанавливаем стили
-        self.setStyleSheet("""
-            QDockWidget {
-                border: 1px solid #cccccc;
-                background: #f5f5f5;
-            }
-            QTreeWidget {
-                border: 1px solid #cccccc;
-                border-radius: 4px;
-                background-color: white;
-                alternate-background-color: #f8f8f8;
-            }
-            QTreeWidget::item {
-                padding: 4px;
-                border-bottom: 1px solid #eeeeee;
-            }
-            QTreeWidget::item:selected {
-                background: #e3f2fd;
-                color: #1976d2;
-            }
-            QPushButton {
-                background-color: #2196f3;
-                color: white;
-                border: none;
-                padding: 5px 10px;
-                border-radius: 3px;
-            }
-            QPushButton:hover {
-                background-color: #1976d2;
-            }
-        """)
-        
         # Собираем layout
         self.main_layout.addWidget(header_widget)
         self.main_layout.addWidget(self.buttons_widget)
@@ -96,7 +65,60 @@ class ConstructionTree(QDockWidget):
         self.treeWidget.setContextMenuPolicy(Qt.CustomContextMenu)
         self.treeWidget.customContextMenuRequested.connect(self.onTreeContextMenu)
         
+        # Инициализируем стили в зависимости от текущей темы приложения
+        is_dark_theme = parent.is_dark_theme if hasattr(parent, 'is_dark_theme') else False
+        self.updateThemeStyles(is_dark_theme)
+        
         self.updateConstructionTree()
+
+    def updateThemeStyles(self, is_dark_theme):
+        if is_dark_theme:
+            # Стили для темной темы
+            self.setStyleSheet("""
+                QTreeWidget {
+                    background-color: #1e1e1e;
+                    alternate-background-color: #252525;
+                    color: #ffffff;
+                    border: 1px solid #3d3d3d;
+                }
+                QTreeWidget::item {
+                    color: #ffffff;
+                    padding: 4px;
+                    border-bottom: 1px solid #3d3d3d;
+                }
+                QTreeWidget::item:selected {
+                    background-color: #2979ff;
+                    color: #ffffff;
+                }
+            """)
+        else:
+            # Стили для светлой темы
+            self.setStyleSheet("""
+                QTreeWidget {
+                    border: 1px solid #cccccc;
+                    border-radius: 4px;
+                    background-color: white;
+                    alternate-background-color: #f8f8f8;
+                }
+                QTreeWidget::item {
+                    padding: 4px;
+                    border-bottom: 1px solid #eeeeee;
+                }
+                QTreeWidget::item:selected {
+                    background: #e3f2fd;
+                    color: #1976d2;
+                }
+                QPushButton {
+                    background-color: #2196f3;
+                    color: white;
+                    border: none;
+                    padding: 5px 10px;
+                    border-radius: 3px;
+                }
+                QPushButton:hover {
+                    background-color: #1976d2;
+                }
+            """)
 
     def saveExpandState(self):
         """Сохраняет состояние развернутых элементов"""
@@ -158,6 +180,9 @@ class ConstructionTree(QDockWidget):
             'SegmentSpline': '#E91E63'         # Розовый
         }
         
+        # Проверяем текущую тему
+        is_dark_theme = self.parent.is_dark_theme if hasattr(self.parent, 'is_dark_theme') else False
+        
         # Добавляем фигуры в дерево
         for index, shape in enumerate(self.canvas.shapes):
             shape_type = type(shape).__name__
@@ -171,7 +196,13 @@ class ConstructionTree(QDockWidget):
             
             # Устанавливаем цвет и стиль для элемента
             color = QColor(shape_colors.get(shape_type, '#757575'))
-            tree_item.setForeground(0, color)
+            
+            # Устанавливаем цвет текста в зависимости от темы
+            if is_dark_theme:
+                tree_item.setForeground(0, QColor('#ffffff'))  # Белый текст для темной темы
+            else:
+                tree_item.setForeground(0, color)  # Цветной текст для светлой темы
+                
             font = QFont("Arial", 10, QFont.Bold)
             tree_item.setFont(0, font)
             
@@ -186,6 +217,8 @@ class ConstructionTree(QDockWidget):
                 parent.addChild(item)
                 # Устанавливаем обычный шрифт для дочерних элементов
                 item.setFont(0, QFont("Arial", 9))
+                if is_dark_theme:
+                    item.setForeground(0, QColor('#ffffff'))  # Белый текст для темной темы
                 return item
 
             # Добавляем информацию в зависимости от типа фигуры
@@ -319,15 +352,15 @@ class ConstructionTree(QDockWidget):
             if data is not None and 'index' in data and 'property' not in data:
                 menu = QMenu()
                 edit_action = QAction('Редактировать', self)
-                edit_action.triggered.connect(lambda: self.editShape(item))
+                edit_action.triggered.connect(lambda checked=False, i=item: self.editShape(i))
                 delete_action = QAction('Удалить', self)
-                delete_action.triggered.connect(lambda: self.deleteShape(item))
+                delete_action.triggered.connect(lambda checked=False, i=item: self.deleteShape(i))
                 rotate_action = QAction('Повернуть', self)
-                rotate_action.triggered.connect(lambda: self.rotateShape(item))
+                rotate_action.triggered.connect(lambda checked=False, i=item: self.rotateShape(i))
                 menu.addAction(edit_action)
                 menu.addAction(delete_action)
                 menu.addAction(rotate_action)
-                menu.exec_(self.treeWidget.viewport().mapToGlobal(position))
+                menu.exec(self.treeWidget.viewport().mapToGlobal(position))
 
     def rotateShape(self, item):
         data = item.data(0, Qt.UserRole)
@@ -341,9 +374,10 @@ class ConstructionTree(QDockWidget):
                     self, 
                     "Поворот фигуры",
                     "Введите угол поворота в градусах\n(положительный - против часовой стрелки):",
-                    value=0,
-                    min=-360,
-                    max=360
+                    0,  # value
+                    -360,  # minValue
+                    360,   # maxValue
+                    1      # decimals
                 )
                 if not ok:
                     return
@@ -370,8 +404,8 @@ class ConstructionTree(QDockWidget):
                     
                 # Выполняем поворот
                 shape.rotate_around_point(angle, center)
-                self.canvas.update()
-                self.updateConstructionTree()
+                self.canvas.update()  # Обеспечиваем перерисовку Canvas
+                self.updateConstructionTree()  # Обновляем дерево объектов
 
     def editShape(self, item):
         data = item.data(0, Qt.UserRole)
@@ -426,12 +460,10 @@ class ConstructionTree(QDockWidget):
         line_type, ok = QInputDialog.getItem(self, "Тип линии", "Выберите тип линии:", line_types, current_line_type_index, False)
         if ok and line_type:
             shape.line_type = line_type_keys[line_types.index(line_type)]
-        # Edit line thickness
-        thickness, ok = QInputDialog.getDouble(self, "Толщина линии", "Введите толщину линии:", value=shape.line_thickness, min=0.1)
+
+        thickness, ok = QInputDialog.getDouble(self, "Толщина линии", "Введите толщину линии:", shape.line_thickness, 0.1, 10.0)
         if ok:
             shape.line_thickness = thickness
-
-    # Implementing Geometry Property Editing Methods
 
     def editShapeProperty(self, shape, property_name):
         if isinstance(shape, Line):
@@ -485,7 +517,7 @@ class ConstructionTree(QDockWidget):
                 return
             shape.center = QPointF(x, y)
         elif property_name == 'radius':
-            radius, ok = QInputDialog.getDouble(self, "Редактировать радиус окружности", "Радиус:", value=shape.radius, min=0.1)
+            radius, ok = QInputDialog.getDouble(self, "Ввод параметров", "Введите радиус:", 1.0, 0.1, 1000.0, 1)
             if not ok:
                 return
             shape.radius = radius
@@ -670,7 +702,7 @@ class ConstructionTree(QDockWidget):
         center_y, ok2 = QInputDialog.getDouble(self, "Редактировать окружность", "Центр Y:", value=shape.center.y())
         if not ok2:
             return
-        radius, ok3 = QInputDialog.getDouble(self, "Редактировать окружность", "Радиус:", value=shape.radius, min=0.1)
+        radius, ok3 = QInputDialog.getDouble(self, "Редактировать окружность", "Радиус:", value=shape.radius, minValue=0.1)
         if not ok3:
             return
         # Update shape

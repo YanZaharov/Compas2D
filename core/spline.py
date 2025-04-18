@@ -1,9 +1,9 @@
 import math
-from PyQt5.QtGui import QPainterPath, QPen, QColor
-from PyQt5.QtCore import QPointF, QRectF
+from PySide6.QtGui import QPainterPath, QPen, QColor
+from PySide6.QtCore import QPointF, QRectF
 from core.base_geometry import Geometry
 from math import factorial
-from PyQt5.QtCore import Qt
+from PySide6.QtCore import Qt
 
 class BezierSpline(Geometry):
     def __init__(self, points, line_type='solid', line_thickness=1.0, 

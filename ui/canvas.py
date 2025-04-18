@@ -1,7 +1,7 @@
 import math
-from PyQt5.QtWidgets import QWidget, QInputDialog, QMessageBox
-from PyQt5.QtGui import QPainter, QColor, QPen, QCursor
-from PyQt5.QtCore import Qt, QPoint, QPointF, QRectF, QSizeF, pyqtSignal
+from PySide6.QtWidgets import QWidget, QInputDialog, QMessageBox
+from PySide6.QtGui import QPainter, QColor, QPen, QCursor
+from PySide6.QtCore import Qt, QPoint, QPointF, QRectF, QSizeF, Signal
 from core.line import Line
 from core.circle import Circle, CircleByThreePoints
 from utils.handle_input import handle_manual_input
@@ -12,9 +12,9 @@ from core.spline import BezierSpline, SegmentSpline
 
 # Класс Canvas отвечает за отрисовку и обработку событий ввода
 class Canvas(QWidget):
-    zPressed = pyqtSignal()
-    shapeAdded = pyqtSignal()
-    shapeRemoved = pyqtSignal()
+    zPressed = Signal()
+    shapeAdded = Signal()
+    shapeRemoved = Signal()
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -543,8 +543,7 @@ class Canvas(QWidget):
                 else:
                     if self.numSides == 0:
                         # Запрашиваем количество сторон у пользователя
-                        self.numSides, ok = QInputDialog.getInt(self, "Количество сторон", "Введите количество сторон:",
-                                                                min=3)
+                        self.numSides, ok = QInputDialog.getInt(self, "Количество сторон", "Введите количество сторон:", 3, 3, 100, 1)
                         if not ok:
                             self.centerPoint = None
                             self.numSides = 0
