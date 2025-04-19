@@ -1,6 +1,7 @@
 import ezdxf
 import math
 from PySide6.QtCore import QPointF, QRectF
+from PySide6.QtGui import QColor
 from core.line import Line
 from core.circle import Circle, CircleByThreePoints
 from core.arc import ArcByThreePoints, ArcByRadiusChord
@@ -10,78 +11,201 @@ from core.spline import BezierSpline, SegmentSpline
 
 def save_to_dxf(shapes, filename):
     """
-    Saves the given shapes to a DXF file
+    Saves the given shapes to a DXF file in R12 format for better LibreCAD compatibility.
     
     Args:
         shapes: List of geometry objects
         filename: Path to save the DXF file
     """
-    # Create a new DXF document
-    doc = ezdxf.new('R2010')  # AutoCAD 2010 format
-    msp = doc.modelspace()  # Get the model space
+    doc = ezdxf.new('R12')
+    msp = doc.modelspace()
     
-    # Convert each shape to its corresponding DXF entity
+    # Create layers for different line thicknesses
+    thickness_layers = {}
     for shape in shapes:
+        if hasattr(shape, 'line_thickness') and shape.line_thickness > 0:
+            thickness = shape.line_thickness
+            if thickness not in thickness_layers:
+                layer_name = f"Thickness_{thickness}"
+                layer = doc.layers.add(layer_name)
+                layer.lineweight = thickness * 100  # Convert to 100ths of mm
+                thickness_layers[thickness] = layer_name
+    
+    # Ensure necessary line types exist
+    ensure_line_types_exist(doc)
+    
+    for shape in shapes:
+        dxfattribs = get_dxf_attributes(shape)
+        
+        # Assign layer based on thickness
+        if hasattr(shape, 'line_thickness') and shape.line_thickness > 0:
+            thickness = shape.line_thickness
+            dxfattribs['layer'] = thickness_layers.get(thickness, '0')
+        
         if isinstance(shape, Line):
-            # Add line entity
             msp.add_line(
                 (shape.start_point.x(), shape.start_point.y()), 
                 (shape.end_point.x(), shape.end_point.y()),
-                dxfattribs=get_dxf_attributes(shape)
+                dxfattribs=dxfattribs
             )
             
         elif isinstance(shape, Circle):
-            # Add circle entity
             msp.add_circle(
                 (shape.center.x(), shape.center.y()),
                 shape.radius,
-                dxfattribs=get_dxf_attributes(shape)
+                dxfattribs=dxfattribs
             )
             
         elif isinstance(shape, CircleByThreePoints):
-            # Calculate circle parameters and add circle entity
             center, radius = shape.calculate_circle()
             if center and radius:
                 msp.add_circle(
                     (center.x(), center.y()),
                     radius,
-                    dxfattribs=get_dxf_attributes(shape)
+                    dxfattribs=dxfattribs
                 )
             
         elif isinstance(shape, ArcByThreePoints):
-            # Calculate arc parameters and add arc entity
             center, radius, start_angle, span_angle = shape.calculate_arc()
             if center and radius:
-                # Convert angles from degrees to radians
-                start_angle_rad = math.radians(start_angle)
-                end_angle_rad = math.radians(start_angle + span_angle)
-                
+                start_angle_deg = start_angle % 360
+                span_angle = span_angle % 360 if span_angle >= 0 else (span_angle % 360) + 360
+                end_angle_deg = (start_angle_deg + span_angle) % 360
+                # Убедимся, что дуга идёт против часовой стрелки
+                if end_angle_deg < start_angle_deg:
+                    end_angle_deg += 360
                 msp.add_arc(
                     (center.x(), center.y()),
                     radius,
-                    math.degrees(start_angle_rad),
-                    math.degrees(end_angle_rad),
-                    dxfattribs=get_dxf_attributes(shape)
+                    start_angle_deg,
+                    end_angle_deg,
+                    dxfattribs=dxfattribs
                 )
             
         elif isinstance(shape, ArcByRadiusChord):
-            # Calculate arc parameters and add arc entity
             radius, start_angle, span_angle = shape.calculate_arc()
-            
-            # Convert angles from degrees to radians
-            start_angle_rad = math.radians(start_angle)
-            end_angle_rad = math.radians(start_angle + span_angle)
-            
+            start_angle_deg = start_angle % 360
+            span_angle = span_angle % 360 if span_angle >= 0 else (span_angle % 360) + 360
+            end_angle_deg = (start_angle_deg + span_angle) % 360
+            if end_angle_deg < start_angle_deg:
+                end_angle_deg += 360
             msp.add_arc(
                 (shape.center.x(), shape.center.y()),
                 radius,
-                math.degrees(start_angle_rad),
-                math.degrees(end_angle_rad),
-                dxfattribs=get_dxf_attributes(shape)
+                start_angle_deg,
+                end_angle_deg,
+                dxfattribs=dxfattribs
             )
             
         elif isinstance(shape, Rectangle):
-            # Add rectangle as a polyline
+            rect = shape.rect
+            points = [
+                (rect.topLeft().x(), rect.topLeft().y()),
+                (rect.topRight().x(), rect.topRight().y()),
+                (rect.bottomRight().x(), rect.bottomRight().y()),
+                (rect.bottomLeft().x(), rect.bottomLeft().y())
+            ]
+            polyline = msp.add_polyline(points, dxfattribs=dxfattribs)
+            polyline.is_closed = True
+            
+        elif isinstance(shape, Polygon):
+            points = [(point.x(), point.y()) for point in shape.points]
+            if points:
+                polyline = msp.add_polyline(points, dxfattribs=dxfattribs)
+                polyline.is_closed = True if len(points) > 1 and points[0] == points[-1] else False
+                
+        elif isinstance(shape, BezierSpline):
+            if len(shape.points) >= 2:
+                t_values = [i / 100 for i in range(101)]  # Increase points for accuracy
+                polyline_points = []
+                for t in t_values:
+                    point = shape.bezier_point(t)
+                    polyline_points.append((point.x(), point.y()))
+                msp.add_polyline(polyline_points, dxfattribs=dxfattribs)
+                
+        elif isinstance(shape, SegmentSpline):
+            spline_points = shape.generate_spline_points()
+            if spline_points:
+                points = [(point.x(), point.y()) for point in spline_points]
+                msp.add_polyline(points, dxfattribs=dxfattribs)
+    
+    doc.saveas(filename)
+    return True
+
+def save_to_dxf_advanced(shapes, filename):
+    """
+    Saves the given shapes to a DXF file using R2000 format for better properties support.
+    
+    Args:
+        shapes: List of geometry objects
+        filename: Path to save the DXF file
+    """
+    doc = ezdxf.new('R2000')
+    doc.header["$LWDISPLAY"] = 1
+    msp = doc.modelspace()
+    
+    # Ensure necessary line types exist
+    ensure_line_types_exist(doc)
+    
+    for shape in shapes:
+        dxfattribs = get_dxf_attributes_advanced(shape)
+        
+        if isinstance(shape, Line):
+            msp.add_line(
+                (shape.start_point.x(), shape.start_point.y()), 
+                (shape.end_point.x(), shape.end_point.y()),
+                dxfattribs=dxfattribs
+            )
+            
+        elif isinstance(shape, Circle):
+            msp.add_circle(
+                (shape.center.x(), shape.center.y()),
+                shape.radius,
+                dxfattribs=dxfattribs
+            )
+            
+        elif isinstance(shape, CircleByThreePoints):
+            center, radius = shape.calculate_circle()
+            if center and radius:
+                msp.add_circle(
+                    (center.x(), center.y()),
+                    radius,
+                    dxfattribs=dxfattribs
+                )
+            
+        elif isinstance(shape, ArcByThreePoints):
+            center, radius, start_angle, span_angle = shape.calculate_arc()
+            if center and radius:
+                start_angle_deg = start_angle % 360
+                span_angle = span_angle % 360 if span_angle >= 0 else (span_angle % 360) + 360
+                end_angle_deg = (start_angle_deg + span_angle) % 360
+                # Убедимся, что дуга идёт против часовой стрелки
+                if end_angle_deg < start_angle_deg:
+                    end_angle_deg += 360
+                msp.add_arc(
+                    (center.x(), center.y()),
+                    radius,
+                    start_angle_deg,
+                    end_angle_deg,
+                    dxfattribs=dxfattribs
+                )
+            
+        elif isinstance(shape, ArcByRadiusChord):
+            radius, start_angle, span_angle = shape.calculate_arc()
+            start_angle_deg = start_angle % 360
+            span_angle = span_angle % 360 if span_angle >= 0 else (span_angle % 360) + 360
+            end_angle_deg = (start_angle_deg + span_angle) % 360
+            if end_angle_deg < start_angle_deg:
+                end_angle_deg += 360
+            msp.add_arc(
+                (shape.center.x(), shape.center.y()),
+                radius,
+                start_angle_deg,
+                end_angle_deg,
+                dxfattribs=dxfattribs
+            )
+            
+        elif isinstance(shape, Rectangle):
             rect = shape.rect
             points = [
                 (rect.topLeft().x(), rect.topLeft().y()),
@@ -90,116 +214,154 @@ def save_to_dxf(shapes, filename):
                 (rect.bottomLeft().x(), rect.bottomLeft().y()),
                 (rect.topLeft().x(), rect.topLeft().y())
             ]
-            msp.add_lwpolyline(points, dxfattribs=get_dxf_attributes(shape))
+            msp.add_lwpolyline(points, dxfattribs=dxfattribs)
             
         elif isinstance(shape, Polygon):
-            # Add polygon as a polyline
             points = [(point.x(), point.y()) for point in shape.points]
             if points:
-                # Close the polygon by adding the first point again
-                points.append(points[0])
-                msp.add_lwpolyline(points, dxfattribs=get_dxf_attributes(shape))
+                if len(points) > 1 and points[0] != points[-1]:
+                    points.append(points[0])
+                msp.add_lwpolyline(points, dxfattribs=dxfattribs)
                 
         elif isinstance(shape, BezierSpline):
-            # Convert Bezier spline to polyline with many segments
             if len(shape.points) >= 2:
-                t_values = [i / shape.num_segments for i in range(shape.num_segments + 1)]
-                polyline_points = []
-                for t in t_values:
-                    point = shape.bezier_point(t)
-                    polyline_points.append((point.x(), point.y()))
-                
-                msp.add_lwpolyline(polyline_points, dxfattribs=get_dxf_attributes(shape))
+                control_points = [(p.x(), p.y(), 0) for p in shape.points]
+                msp.add_spline(control_points, dxfattribs=dxfattribs)
                 
         elif isinstance(shape, SegmentSpline):
-            # Add segment spline as a polyline
             spline_points = shape.generate_spline_points()
             if spline_points:
                 points = [(point.x(), point.y()) for point in spline_points]
-                msp.add_lwpolyline(points, dxfattribs=get_dxf_attributes(shape))
+                msp.add_lwpolyline(points, dxfattribs=dxfattribs)
     
-    # Save the DXF document
     doc.saveas(filename)
     return True
 
-def get_dxf_attributes(shape):
+def ensure_line_types_exist(doc):
     """
-    Converts shape attributes to DXF attributes
+    Ensure necessary line types exist in the DXF document.
     
     Args:
-        shape: The geometry object
+        doc: DXF document
+    """
+    linetypes = doc.linetypes
+    if 'DASHED' not in linetypes:
+        linetypes.add('DASHED', pattern=[10.0, -5.0])
+    if 'DASHDOT' not in linetypes:
+        linetypes.add('DASHDOT', pattern=[10.0, -3.0, 0.0, -3.0])
+    if 'DASHDOT2' not in linetypes:
+        linetypes.add('DASHDOT2', pattern=[10.0, -3.0, 0.0, -3.0, 0.0, -3.0])
+
+def get_dxf_attributes(shape):
+    """
+    Get DXF attributes for R12 format.
+    
+    Args:
+        shape: Geometry object
         
     Returns:
         Dictionary of DXF attributes
     """
     attributes = {}
-    
-    # Convert color
     if hasattr(shape, 'color'):
-        # Convert QColor to AutoCAD color index (approximate)
         color_index = convert_qcolor_to_aci(shape.color)
-        attributes['color'] = color_index
-    
-    # Convert line type
+        if color_index is not None:
+            attributes['color'] = color_index
     if hasattr(shape, 'line_type'):
         line_type = shape.line_type
-        if line_type != 'solid':
-            # Create or use the appropriate line type
-            if line_type == 'dash':
-                attributes['linetype'] = 'DASHED'
-            elif line_type == 'dash_dot':
-                attributes['linetype'] = 'DASHDOT'
-            elif line_type == 'dash_dot_dot':
-                attributes['linetype'] = 'DASHDOT2'
+        if line_type == 'solid':
+            attributes['linetype'] = 'CONTINUOUS'
+        elif line_type == 'dash':
+            attributes['linetype'] = 'DASHED'
+        elif line_type == 'dash_dot':
+            attributes['linetype'] = 'DASHDOT'
+        elif line_type == 'dash_dot_dot':
+            attributes['linetype'] = 'DASHDOT2'
+    return attributes
+
+def get_dxf_attributes_advanced(shape):
+    """
+    Get DXF attributes for R2000 format.
     
-    # Convert line thickness
-    if hasattr(shape, 'line_thickness'):
-        # DXF uses lineweight in 100ths of mm
-        # Convert from application units to 100ths of mm (approximate)
-        attributes['lineweight'] = int(shape.line_thickness * 10)
-    
+    Args:
+        shape: Geometry object
+        
+    Returns:
+        Dictionary of DXF attributes
+    """
+    attributes = {'layer': '0'}
+    if hasattr(shape, 'color'):
+        color_index = convert_qcolor_to_aci(shape.color)
+        if color_index is not None:
+            attributes['color'] = color_index
+    if hasattr(shape, 'line_type'):
+        line_type = shape.line_type
+        if line_type == 'solid':
+            attributes['linetype'] = 'CONTINUOUS'
+        elif line_type == 'dash':
+            attributes['linetype'] = 'DASHED'
+        elif line_type == 'dash_dot':
+            attributes['linetype'] = 'DASHDOT'
+        elif line_type == 'dash_dot_dot':
+            attributes['linetype'] = 'DASHDOT2'
+    if hasattr(shape, 'line_thickness') and shape.line_thickness > 0:
+        thickness_mm = shape.line_thickness
+        std_thicknesses = [0, 5, 9, 13, 15, 18, 20, 25, 30, 35, 40, 50, 53, 60, 70, 80, 90, 100, 106, 120, 140, 158, 200, 211]
+        thickness_100mm = int(thickness_mm * 100)
+        closest_std = min(std_thicknesses, key=lambda x: abs(x - thickness_100mm))
+        attributes['lineweight'] = closest_std
     return attributes
 
 def convert_qcolor_to_aci(qcolor):
     """
-    Converts a QColor to AutoCAD Color Index (ACI)
+    Convert QColor to AutoCAD Color Index (ACI).
     
     Args:
         qcolor: QColor object
         
     Returns:
-        Integer representing the closest AutoCAD Color Index
+        Integer representing the closest ACI
     """
-    # This is a simplified conversion
-    # AutoCAD uses a color index from 1 to 255
-    # For now, we'll use a simple algorithm to find the closest match
-    
+    if qcolor is None:
+        return 256  # ByLayer
     r, g, b = qcolor.red(), qcolor.green(), qcolor.blue()
+    standard_colors = {
+        (0, 0, 0): 0, (255, 0, 0): 1, (255, 255, 0): 2, (0, 255, 0): 3,
+        (0, 255, 255): 4, (0, 0, 255): 5, (255, 0, 255): 6, (255, 255, 255): 7,
+        (128, 128, 128): 8, (192, 192, 192): 9
+    }
+    if (r, g, b) in standard_colors:
+        return standard_colors[(r, g, b)]
+    min_distance = float('inf')
+    closest_index = 7
+    for (sr, sg, sb), index in standard_colors.items():
+        distance = math.sqrt((r - sr)**2 + (g - sg)**2 + (b - sb)**2)
+        if distance < min_distance:
+            min_distance = distance
+            closest_index = index
+    return closest_index
+
+def convert_aci_to_qcolor(aci):
+    """
+    Convert ACI to QColor.
     
-    # Special cases
-    if r == 0 and g == 0 and b == 0:
-        return 0  # Black (or ByBlock)
-    if r == 255 and g == 0 and b == 0:
-        return 1  # Red
-    if r == 255 and g == 255 and b == 0:
-        return 2  # Yellow
-    if r == 0 and g == 255 and b == 0:
-        return 3  # Green
-    if r == 0 and g == 255 and b == 255:
-        return 4  # Cyan
-    if r == 0 and g == 0 and b == 255:
-        return 5  # Blue
-    if r == 255 and g == 0 and b == 255:
-        return 6  # Magenta
-    if r == 255 and g == 255 and b == 255:
-        return 7  # White
-    
-    # For other colors, return a reasonable default
-    return 7
+    Args:
+        aci: AutoCAD Color Index
+        
+    Returns:
+        QColor object
+    """
+    basic_aci_to_rgb = {
+        0: (0, 0, 0), 1: (255, 0, 0), 2: (255, 255, 0), 3: (0, 255, 0),
+        4: (0, 255, 255), 5: (0, 0, 255), 6: (255, 0, 255), 7: (255, 255, 255),
+        8: (128, 128, 128), 9: (192, 192, 192)
+    }
+    r, g, b = basic_aci_to_rgb.get(aci, (0, 0, 0))
+    return QColor(r, g, b)
 
 def read_from_dxf(filename, canvas):
     """
-    Reads shapes from a DXF file and adds them to the canvas
+    Read shapes from a DXF file and add them to the canvas.
     
     Args:
         filename: Path to the DXF file
@@ -209,24 +371,14 @@ def read_from_dxf(filename, canvas):
         List of loaded shapes
     """
     try:
-        # Load the DXF document
         doc = ezdxf.readfile(filename)
-        
-        # Get the model space
         msp = doc.modelspace()
-        
-        # Create a list to store the loaded shapes
         loaded_shapes = []
-        
-        # Process all entities in the model space
         for entity in msp:
-            # Convert DXF entity to application's geometry
             shape = convert_dxf_to_shape(entity, canvas)
             if shape:
                 loaded_shapes.append(shape)
-        
         return loaded_shapes
-        
     except ezdxf.DXFError as e:
         print(f"DXF Error: {str(e)}")
         return []
@@ -236,7 +388,7 @@ def read_from_dxf(filename, canvas):
 
 def convert_dxf_to_shape(entity, canvas):
     """
-    Converts a DXF entity to the corresponding application geometry
+    Convert a DXF entity to the corresponding application geometry.
     
     Args:
         entity: DXF entity object
@@ -245,217 +397,123 @@ def convert_dxf_to_shape(entity, canvas):
     Returns:
         Geometry object or None if conversion is not supported
     """
-    # Get common attributes
     shape_attributes = extract_dxf_attributes(entity, canvas)
     
     if entity.dxftype() == 'LINE':
-        # Convert LINE entity to Line
         start_point = QPointF(entity.dxf.start[0], entity.dxf.start[1])
         end_point = QPointF(entity.dxf.end[0], entity.dxf.end[1])
-        
         return Line(
-            start_point, 
-            end_point, 
-            shape_attributes['line_type'], 
-            shape_attributes['line_thickness'],
-            dash_parameters=canvas.dash_parameters,
-            dash_auto_mode=canvas.dash_auto_mode,
-            color=shape_attributes['color']
+            start_point, end_point, shape_attributes['line_type'], 
+            shape_attributes['line_thickness'], dash_parameters=canvas.dash_parameters,
+            dash_auto_mode=canvas.dash_auto_mode, color=shape_attributes['color']
         )
         
     elif entity.dxftype() == 'CIRCLE':
-        # Convert CIRCLE entity to Circle
         center = QPointF(entity.dxf.center[0], entity.dxf.center[1])
         radius = entity.dxf.radius
-        
         return Circle(
-            center, 
-            radius, 
-            shape_attributes['line_type'], 
-            shape_attributes['line_thickness'],
-            dash_parameters=canvas.dash_parameters,
-            dash_auto_mode=canvas.dash_auto_mode,
-            color=shape_attributes['color']
+            center, radius, shape_attributes['line_type'], 
+            shape_attributes['line_thickness'], dash_parameters=canvas.dash_parameters,
+            dash_auto_mode=canvas.dash_auto_mode, color=shape_attributes['color']
         )
         
     elif entity.dxftype() == 'ARC':
-        # Convert ARC entity to ArcByRadiusChord
         center = QPointF(entity.dxf.center[0], entity.dxf.center[1])
         radius = entity.dxf.radius
         start_angle = entity.dxf.start_angle
         end_angle = entity.dxf.end_angle
-        
-        # Calculate points on arc
         start_rad = math.radians(start_angle)
         end_rad = math.radians(end_angle)
-        
-        # Create points for ArcByRadiusChord
-        radius_point = QPointF(
-            center.x() + radius * math.cos(start_rad),
-            center.y() + radius * math.sin(start_rad)
-        )
-        chord_point = QPointF(
-            center.x() + radius * math.cos(end_rad),
-            center.y() + radius * math.sin(end_rad)
-        )
-        
+        radius_point = QPointF(center.x() + radius * math.cos(start_rad), center.y() + radius * math.sin(start_rad))
+        chord_point = QPointF(center.x() + radius * math.cos(end_rad), center.y() + radius * math.sin(end_rad))
         return ArcByRadiusChord(
-            center, 
-            radius_point, 
-            chord_point, 
-            shape_attributes['line_type'], 
-            shape_attributes['line_thickness'],
-            dash_parameters=canvas.dash_parameters,
-            dash_auto_mode=canvas.dash_auto_mode,
-            color=shape_attributes['color']
+            center, radius_point, chord_point, shape_attributes['line_type'], 
+            shape_attributes['line_thickness'], dash_parameters=canvas.dash_parameters,
+            dash_auto_mode=canvas.dash_auto_mode, color=shape_attributes['color']
         )
         
-    elif entity.dxftype() == 'LWPOLYLINE':
-        # Get polyline vertices
-        vertices = list(entity.vertices())
-        points = [QPointF(v[0], v[1]) for v in vertices]
-        
+    elif entity.dxftype() in ['LWPOLYLINE', 'POLYLINE']:
+        points = []
+        if entity.dxftype() == 'LWPOLYLINE':
+            points = [QPointF(v[0], v[1]) for v in entity.vertices()]
+        else:
+            points = [QPointF(v.dxf.location[0], v.dxf.location[1]) for v in entity.vertices]
         if len(points) < 2:
             return None
-            
-        # Check if this is a rectangle (4 points, closed)
-        if len(points) == 5 and entity.closed:
-            # Check if points form a rectangle
-            if is_rectangle(points[:-1]):  # Ignore last point (duplicate of first for closed polyline)
-                min_x = min(p.x() for p in points[:-1])
-                min_y = min(p.y() for p in points[:-1])
-                max_x = max(p.x() for p in points[:-1])
-                max_y = max(p.y() for p in points[:-1])
-                
-                rect = QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
-                
-                return Rectangle(
-                    rect, 
-                    shape_attributes['line_type'], 
-                    shape_attributes['line_thickness'],
-                    dash_parameters=canvas.dash_parameters,
-                    dash_auto_mode=canvas.dash_auto_mode,
-                    color=shape_attributes['color']
-                )
-        
-        # Otherwise treat as a polygon
+        closed = entity.is_closed if entity.dxftype() == 'POLYLINE' else entity.closed
+        if closed and len(points) > 1 and points[0] == points[-1]:
+            points = points[:-1]
+        if len(points) == 4 and is_rectangle(points):
+            min_x = min(p.x() for p in points)
+            min_y = min(p.y() for p in points)
+            max_x = max(p.x() for p in points)
+            max_y = max(p.y() for p in points)
+            rect = QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
+            return Rectangle(
+                rect, shape_attributes['line_type'], shape_attributes['line_thickness'],
+                dash_parameters=canvas.dash_parameters, dash_auto_mode=canvas.dash_auto_mode,
+                color=shape_attributes['color']
+            )
         return Polygon(
-            points[:-1] if entity.closed and points[0] == points[-1] else points, 
-            shape_attributes['line_type'], 
-            shape_attributes['line_thickness'],
-            dash_parameters=canvas.dash_parameters,
-            dash_auto_mode=canvas.dash_auto_mode,
+            points, shape_attributes['line_type'], shape_attributes['line_thickness'],
+            dash_parameters=canvas.dash_parameters, dash_auto_mode=canvas.dash_auto_mode,
             color=shape_attributes['color']
         )
         
     elif entity.dxftype() == 'SPLINE':
-        # Convert SPLINE entity to BezierSpline
         control_points = [QPointF(p[0], p[1]) for p in entity.control_points]
-        
         return BezierSpline(
-            control_points, 
-            shape_attributes['line_type'], 
-            shape_attributes['line_thickness'],
-            dash_parameters=canvas.dash_parameters,
-            dash_auto_mode=canvas.dash_auto_mode,
+            control_points, shape_attributes['line_type'], shape_attributes['line_thickness'],
+            dash_parameters=canvas.dash_parameters, dash_auto_mode=canvas.dash_auto_mode,
             color=shape_attributes['color']
         )
-    
-    # If we can't convert the entity, return None
     return None
 
-def is_rectangle(points):
-    """Check if 4 points form a rectangle"""
+def is_rectangle(points, tolerance=1e-6):
+    """Check if 4 points form a rectangle with a tolerance for floating-point errors."""
     if len(points) != 4:
         return False
-        
-    # Check if all angles are 90 degrees (or 270 degrees)
     for i in range(4):
         p1 = points[i]
         p2 = points[(i + 1) % 4]
         p3 = points[(i + 2) % 4]
-        
-        # Calculate vectors
         v1 = (p2.x() - p1.x(), p2.y() - p1.y())
         v2 = (p3.x() - p2.x(), p3.y() - p2.y())
-        
-        # Calculate dot product (should be 0 for perpendicular vectors)
         dot_product = v1[0] * v2[0] + v1[1] * v2[1]
-        
-        # Allow for some floating-point error
-        if abs(dot_product) > 1e-10:
+        if abs(dot_product) > tolerance:
             return False
-            
     return True
 
 def extract_dxf_attributes(entity, canvas):
     """
-    Extract attributes from a DXF entity
+    Extract attributes from a DXF entity.
     
     Args:
         entity: DXF entity object
         canvas: Canvas object for default attributes
         
     Returns:
-        Dictionary of attributes compatible with application
+        Dictionary of attributes
     """
     attributes = {
         'line_type': 'solid',
         'line_thickness': canvas.lineThickness,
         'color': canvas.currentColor
     }
-    
-    # Get color if available
-    if hasattr(entity.dxf, 'color') and entity.dxf.color != 256:  # 256 is "ByLayer"
-        # Convert color index to QColor
+    if hasattr(entity.dxf, 'lineweight') and entity.dxf.lineweight > 0:
+        attributes['line_thickness'] = entity.dxf.lineweight / 100.0
+    elif hasattr(entity.dxf, 'thickness') and entity.dxf.thickness > 0:
+        attributes['line_thickness'] = entity.dxf.thickness
+    if hasattr(entity.dxf, 'color') and entity.dxf.color != 256:
         attributes['color'] = convert_aci_to_qcolor(entity.dxf.color)
-    
-    # Get line type if available
     if hasattr(entity.dxf, 'linetype'):
         linetype = entity.dxf.linetype
-        if linetype == 'DASHED':
+        if linetype == 'CONTINUOUS':
+            attributes['line_type'] = 'solid'
+        elif linetype == 'DASHED':
             attributes['line_type'] = 'dash'
         elif linetype == 'DASHDOT':
             attributes['line_type'] = 'dash_dot'
         elif linetype in ['DASHDOT2', 'DIVIDE']:
             attributes['line_type'] = 'dash_dot_dot'
-    
-    # Get line thickness if available
-    if hasattr(entity.dxf, 'lineweight') and entity.dxf.lineweight != -1:  # -1 is "ByLayer"
-        # DXF uses lineweight in 100ths of mm
-        # Convert to application units (approximate)
-        attributes['line_thickness'] = entity.dxf.lineweight / 10
-    
     return attributes
-
-def convert_aci_to_qcolor(aci):
-    """
-    Convert AutoCAD Color Index (ACI) to QColor
-    
-    Args:
-        aci: AutoCAD Color Index
-        
-    Returns:
-        QColor object
-    """
-    from PySide6.QtGui import QColor
-    
-    # Standard AutoCAD Color Index to RGB mapping
-    aci_to_rgb = {
-        0: (0, 0, 0),     # Black (ByBlock)
-        1: (255, 0, 0),   # Red
-        2: (255, 255, 0), # Yellow
-        3: (0, 255, 0),   # Green
-        4: (0, 255, 255), # Cyan
-        5: (0, 0, 255),   # Blue
-        6: (255, 0, 255), # Magenta
-        7: (255, 255, 255), # White
-        8: (128, 128, 128), # Gray
-        9: (192, 192, 192), # Light Gray
-        # More colors could be added here
-    }
-    
-    # Default to black if color not found
-    r, g, b = aci_to_rgb.get(aci, (0, 0, 0))
-    
-    return QColor(r, g, b)

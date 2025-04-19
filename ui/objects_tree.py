@@ -1,9 +1,9 @@
 from PySide6.QtWidgets import (QDockWidget, QTreeWidget, QTreeWidgetItem, QMenu, 
                            QInputDialog, QMessageBox, QVBoxLayout, 
                            QWidget, QLabel, QPushButton, QHBoxLayout)
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QColor, QBrush
 from PySide6.QtCore import Qt, QPointF, QRectF, QSizeF
-from PySide6.QtGui import QColor, QFont  
+from PySide6.QtGui import QFont  
 from core.line import Line
 from core.circle import Circle, CircleByThreePoints
 from core.arc import ArcByThreePoints, ArcByRadiusChord
@@ -180,6 +180,14 @@ class ConstructionTree(QDockWidget):
             'SegmentSpline': '#E91E63'         # Розовый
         }
         
+        # Словарь соответствия типов линий русским названиям
+        line_type_names = {
+            'solid': 'Сплошная',
+            'dash': 'Штриховая',
+            'dash_dot': 'Штрих-пунктирная',
+            'dash_dot_dot': 'Штрих-пунктирная с двумя точками'
+        }
+        
         # Проверяем текущую тему
         is_dark_theme = self.parent.is_dark_theme if hasattr(self.parent, 'is_dark_theme') else False
         
@@ -206,6 +214,10 @@ class ConstructionTree(QDockWidget):
             font = QFont("Arial", 10, QFont.Bold)
             tree_item.setFont(0, font)
             
+            # Выделение элемента, если он соответствует выделенному на холсте
+            if index == self.canvas.highlighted_shape_index:
+                self.treeWidget.setCurrentItem(tree_item)
+            
             self.treeWidget.addTopLevelItem(tree_item)
 
             # Функция для создания дочернего элемента с форматированием
@@ -220,6 +232,33 @@ class ConstructionTree(QDockWidget):
                 if is_dark_theme:
                     item.setForeground(0, QColor('#ffffff'))  # Белый текст для темной темы
                 return item
+            
+            # Добавляем информацию о стиле линии
+            if hasattr(shape, 'line_type'):
+                line_type_text = line_type_names.get(shape.line_type, shape.line_type)
+                create_child_item(tree_item,
+                    f"Тип линии: {line_type_text}",
+                    index, 'line_type')
+            
+            # Добавляем информацию о толщине линии
+            if hasattr(shape, 'line_thickness'):
+                create_child_item(tree_item,
+                    f"Толщина линии: {shape.line_thickness:.2f}",
+                    index, 'line_thickness')
+            
+            # Добавляем информацию о цвете линии
+            if hasattr(shape, 'color') and shape.color:
+                color_item = create_child_item(tree_item,
+                    f"Цвет: {shape.color.name()}",
+                    index, 'color')
+                
+                # Создаем небольшой цветной индикатор
+                color_brush = QBrush(shape.color)
+                color_item.setBackground(0, color_brush)
+                
+                # Если цвет темный, сделаем текст белым
+                if shape.color.red() + shape.color.green() + shape.color.blue() < 380:
+                    color_item.setForeground(0, QColor(255, 255, 255))
 
             # Добавляем информацию в зависимости от типа фигуры
             if isinstance(shape, Line):
@@ -331,7 +370,35 @@ class ConstructionTree(QDockWidget):
             self.restoreExpandState(expanded_states)
 
     def onTreeItemClicked(self, item):
-        pass
+        data = item.data(0, Qt.UserRole)
+        if data is not None and 'index' in data:
+            index = data['index']
+            # Проверяем, что индекс в пределах списка фигур
+            if 0 <= index < len(self.canvas.shapes):
+                # Прямая установка индекса выделенной фигуры
+                self.canvas.highlighted_shape_index = index
+                # Принудительная перерисовка холста
+                self.canvas.repaint()
+                
+                # Также обновляем статусную строку
+                shape = self.canvas.shapes[index]
+                shape_type = type(shape).__name__
+                # Словарь соответствия английских названий русским
+                shape_names = {
+                    'Line': 'Линия',
+                    'Circle': 'Окружность',
+                    'Rectangle': 'Прямоугольник',
+                    'Polygon': 'Многоугольник',
+                    'CircleByThreePoints': 'Окружность по трем точкам',
+                    'ArcByThreePoints': 'Дуга по трем точкам',
+                    'ArcByRadiusChord': 'Дуга по радиусу и хорде',
+                    'BezierSpline': 'Кривая Безье',
+                    'SegmentSpline': 'Сегментная кривая'
+                }
+                shape_name = shape_names.get(shape_type, shape_type)
+                message = f"Выбран объект: {index + 1}: {shape_name}"
+                if hasattr(self.parent, 'statusBar'):
+                    self.parent.statusBar.showMessage(message)
 
     def onTreeItemDoubleClicked(self, item, column):
         data = item.data(0, Qt.UserRole)
@@ -357,10 +424,73 @@ class ConstructionTree(QDockWidget):
                 delete_action.triggered.connect(lambda checked=False, i=item: self.deleteShape(i))
                 rotate_action = QAction('Повернуть', self)
                 rotate_action.triggered.connect(lambda checked=False, i=item: self.rotateShape(i))
+                
+                # Добавляем пункты для изменения цвета и толщины
+                color_action = QAction('Изменить цвет', self)
+                color_action.triggered.connect(lambda checked=False, i=item: self.changeShapeColor(i))
+                thickness_action = QAction('Изменить толщину', self)
+                thickness_action.triggered.connect(lambda checked=False, i=item: self.changeShapeThickness(i))
+                
                 menu.addAction(edit_action)
                 menu.addAction(delete_action)
                 menu.addAction(rotate_action)
+                menu.addSeparator()
+                menu.addAction(color_action)
+                menu.addAction(thickness_action)
                 menu.exec(self.treeWidget.viewport().mapToGlobal(position))
+
+    def changeShapeColor(self, item):
+        """Изменяет цвет выбранной фигуры"""
+        data = item.data(0, Qt.UserRole)
+        if data is not None and 'index' in data:
+            index = data['index']
+            if 0 <= index < len(self.canvas.shapes):
+                shape = self.canvas.shapes[index]
+                
+                # Вызываем метод выбора цвета из главного окна
+                if hasattr(self.parent, 'chooseColor'):
+                    # Сохраняем текущий цвет
+                    previous_color = self.parent.canvas.currentColor
+                    
+                    # Устанавливаем текущий цвет фигуры как активный
+                    if hasattr(shape, 'color') and shape.color:
+                        self.parent.canvas.currentColor = shape.color
+                    
+                    # Вызываем диалог выбора цвета
+                    self.parent.chooseColor()
+                    
+                    # Устанавливаем выбранный цвет для фигуры
+                    if hasattr(shape, 'color'):
+                        shape.color = self.parent.canvas.currentColor
+                    
+                    # Возвращаем предыдущий цвет как текущий
+                    self.parent.canvas.currentColor = previous_color
+                    
+                    # Обновляем отображение
+                    self.canvas.update()
+                    self.updateConstructionTree()
+
+    def changeShapeThickness(self, item):
+        """Изменяет толщину линии выбранной фигуры"""
+        data = item.data(0, Qt.UserRole)
+        if data is not None and 'index' in data:
+            index = data['index']
+            if 0 <= index < len(self.canvas.shapes):
+                shape = self.canvas.shapes[index]
+                
+                if hasattr(shape, 'line_thickness'):
+                    thickness, ok = QInputDialog.getDouble(
+                        self, 
+                        "Толщина линии", 
+                        "Введите толщину линии:", 
+                        shape.line_thickness, 
+                        0.1, 10.0, 1
+                    )
+                    
+                    if ok:
+                        shape.line_thickness = thickness
+                        self.canvas.update()
+                        self.updateConstructionTree()
 
     def rotateShape(self, item):
         data = item.data(0, Qt.UserRole)
@@ -466,7 +596,40 @@ class ConstructionTree(QDockWidget):
             shape.line_thickness = thickness
 
     def editShapeProperty(self, shape, property_name):
-        if isinstance(shape, Line):
+        if property_name == 'line_type':
+            line_types = ['Сплошная', 'Штриховая', 'Штрих-пунктирная', 'Штрих-пунктирная с двумя точками']
+            line_type_keys = ['solid', 'dash', 'dash_dot', 'dash_dot_dot']
+            current_line_type_index = line_type_keys.index(shape.line_type)
+            line_type, ok = QInputDialog.getItem(self, "Тип линии", "Выберите тип линии:", line_types, current_line_type_index, False)
+            if ok and line_type:
+                shape.line_type = line_type_keys[line_types.index(line_type)]
+        
+        elif property_name == 'line_thickness':
+            thickness, ok = QInputDialog.getDouble(self, "Толщина линии", "Введите толщину линии:", shape.line_thickness, 0.1, 10.0)
+            if ok:
+                shape.line_thickness = thickness
+        
+        elif property_name == 'color':
+            # Вызываем диалог выбора цвета из главного окна
+            if hasattr(self.parent, 'chooseColor'):
+                # Сохраняем текущий цвет
+                previous_color = self.parent.canvas.currentColor
+                
+                # Устанавливаем текущий цвет фигуры как активный
+                if hasattr(shape, 'color') and shape.color:
+                    self.parent.canvas.currentColor = shape.color
+                
+                # Вызываем диалог выбора цвета
+                self.parent.chooseColor()
+                
+                # Устанавливаем выбранный цвет для фигуры
+                if hasattr(shape, 'color'):
+                    shape.color = self.parent.canvas.currentColor
+                
+                # Возвращаем предыдущий цвет как текущий
+                self.parent.canvas.currentColor = previous_color
+        
+        elif isinstance(shape, Line):
             self.editLineShapeProperty(shape, property_name)
         elif isinstance(shape, Circle):
             self.editCircleShapeProperty(shape, property_name)

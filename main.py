@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt
 from ui.canvas import Canvas
 from ui.objects_tree import ConstructionTree
 from PySide6.QtGui import QColor
-from dxf_handler import save_to_dxf, read_from_dxf
+from dxf_handler import save_to_dxf_advanced, read_from_dxf
 
 # Константы для строковых значений
 COORD_SYSTEMS = {'cartesian': 'Декартова', 'polar': 'Полярная'}
@@ -505,11 +505,94 @@ class MainWindow(QMainWindow):
         shapeSettingsMenu.addAction(lineThicknessAction)
     
     def chooseColor(self):
-        from PySide6.QtWidgets import QColorDialog
-        color = QColorDialog.getColor(Qt.black, self, "Выберите цвет")
+        """
+        Открывает диалог выбора стандартных CAD-совместимых цветов
+        """
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QPushButton, QHBoxLayout, QLabel, QGridLayout
+        from PySide6.QtGui import QColor, QIcon, QPixmap
+        from PySide6.QtCore import Qt, QSize
+        
+        # Стандартные цвета AutoCAD, совместимые с большинством CAD-программ
+        standard_colors = {
+            "Черный": (0, 0, 0),          # Black (0)
+            "Красный": (255, 0, 0),       # Red (1)
+            "Желтый": (255, 255, 0),      # Yellow (2)
+            "Зеленый": (0, 255, 0),       # Green (3)
+            "Голубой": (0, 255, 255),     # Cyan (4)
+            "Синий": (0, 0, 255),         # Blue (5)
+            "Фиолетовый": (255, 0, 255),  # Magenta (6)
+            "Белый": (255, 255, 255),     # White (7)
+            "Серый": (128, 128, 128),     # Gray (8)
+            "Светло-серый": (192, 192, 192)  # Light Gray (9)
+        }
+        
+        # Создаем диалог выбора цвета
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Выберите CAD-совместимый цвет")
+        dialog.setMinimumWidth(400)
+        
+        layout = QVBoxLayout()
+        layout.setSpacing(10)
+        
+        # Добавляем заголовок
+        info_label = QLabel("Выберите один из стандартных CAD-совместимых цветов:")
+        info_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(info_label)
+        
+        # Создаем сетку для цветов (3 колонки)
+        grid = QGridLayout()
+        grid.setSpacing(10)
+        
+        # Функция для создания цветного квадрата
+        def create_color_square(color):
+            pixmap = QPixmap(32, 32)
+            pixmap.fill(color)
+            return QIcon(pixmap)
+        
+        # Добавляем цветные кнопки в сетку
+        row, col = 0, 0
+        for color_name, rgb in standard_colors.items():
+            color = QColor(*rgb)
+            button = QPushButton()
+            button.setToolTip(color_name)
+            button.setIcon(create_color_square(color))
+            button.setIconSize(QSize(32, 32))
+            button.setMinimumHeight(50)
+            button.clicked.connect(lambda checked, c=color: self.setSelectedColor(c, dialog))
+            
+            # Добавляем метку с названием цвета под кнопкой
+            color_layout = QVBoxLayout()
+            color_layout.addWidget(button)
+            color_layout.addWidget(QLabel(color_name, alignment=Qt.AlignCenter))
+            
+            grid.addLayout(color_layout, row, col)
+            
+            col += 1
+            if col > 2:  # 3 колонки
+                col = 0
+                row += 1
+        
+        layout.addLayout(grid)
+        
+        # Кнопки Отмена/OK в нижней части
+        buttons_layout = QHBoxLayout()
+        cancel_button = QPushButton("Отмена")
+        cancel_button.clicked.connect(dialog.reject)
+        buttons_layout.addWidget(cancel_button)
+        
+        layout.addLayout(buttons_layout)
+        
+        dialog.setLayout(layout)
+        dialog.exec()
+
+    def setSelectedColor(self, color, dialog):
+        """
+        Устанавливает выбранный цвет и закрывает диалог
+        """
         if color.isValid():
             self.canvas.currentColor = color
             self.statusBar.showMessage(f"Цвет линии изменен на {color.name()}")
+            dialog.accept()
 
     def createCoordinateSystemMenu(self, menu):
         coordinateSystemMenu = menu.addMenu('Система координат')
@@ -561,11 +644,53 @@ class MainWindow(QMainWindow):
         self.statusBar.showMessage(f"Установлен тип линии: {LINE_TYPES[line_type]}")
 
     def setLineThickness(self):
-        thickness, ok = QInputDialog.getDouble(self, "Толщина линии", "Введите толщину линии:", 
-                                            self.canvas.lineThickness, 0.1, 10.0, 1)
+        """
+        Показывает диалог выбора стандартной толщины линии согласно ISO
+        """
+        # Стандартные значения толщины линий по ISO в мм
+        standard_thicknesses = [
+            0.00, 0.05, 0.09,  # Очень тонкие
+            0.13, 0.15, 0.18, 0.20, 0.25,  # Тонкие
+            0.30, 0.35, 0.40, 0.50,  # Средние
+            0.70,  # Толстые
+            1.00   # Очень толстые
+        ]
+        
+        # Находим ближайшее стандартное значение к текущей толщине
+        current_thickness = self.canvas.lineThickness
+        closest_thickness = min(standard_thicknesses, key=lambda x: abs(x - current_thickness))
+        current_index = standard_thicknesses.index(closest_thickness)
+        
+        # Создаем описательные метки для каждой толщины
+        thickness_labels = []
+        for t in standard_thicknesses:
+            if t <= 0.09:
+                category = "Очень тонкая"
+            elif t <= 0.25:
+                category = "Тонкая"
+            elif t <= 0.50:
+                category = "Средняя"
+            elif t <= 0.70:
+                category = "Толстая"
+            else:
+                category = "Очень толстая"
+            thickness_labels.append(f"{t:.2f} мм ({category})")
+        
+        # Показываем диалог выбора толщины
+        thickness, ok = QInputDialog.getItem(
+            self, 
+            "Толщина линии", 
+            "Выберите стандартную толщину линии по ISO:", 
+            thickness_labels, 
+            current_index, 
+            False
+        )
+        
         if ok:
-            self.canvas.lineThickness = thickness
-            self.statusBar.showMessage(f"Толщина линии установлена: {thickness}")
+            # Извлекаем значение толщины из выбранной метки
+            selected_thickness = float(thickness.split()[0])
+            self.canvas.lineThickness = selected_thickness
+            self.statusBar.showMessage(f"Толщина линии установлена: {selected_thickness} мм")
 
     def rotateLeft(self):
         self.canvas.rotate(10)
@@ -638,7 +763,7 @@ class MainWindow(QMainWindow):
         
         # Save to current file
         try:
-            success = save_to_dxf(self.canvas.shapes, self.current_file)
+            success = save_to_dxf_advanced(self.canvas.shapes, self.current_file)  # Используем advanced версию
             if success:
                 self.statusBar.showMessage(f"Файл сохранен: {self.current_file}")
                 return True
@@ -667,7 +792,7 @@ class MainWindow(QMainWindow):
                 
             # Save to file
             try:
-                success = save_to_dxf(self.canvas.shapes, filename)
+                success = save_to_dxf_advanced(self.canvas.shapes, filename)  # Используем advanced версию
                 if success:
                     self.current_file = filename
                     self.fileNameLabel.setText(f"Файл: {self.getFileNameFromPath(filename)}")

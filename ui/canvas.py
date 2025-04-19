@@ -134,7 +134,7 @@ class Canvas(QWidget):
     # Метод для выделения фигуры
     def highlightShape(self, index):
         self.highlighted_shape_index = index
-        self.update()
+        self.repaint()  # Использование repaint() вместо update() для немедленной перерисовки
 
     def setDrawingMode(self, mode):
         # Если переключаемся со сплайна Безье, сбрасываем его состояние
@@ -200,7 +200,6 @@ class Canvas(QWidget):
             penY.setWidthF(0.5)  # Толщина линии
             painter.setPen(penY)
             painter.drawLine(0, -length, 0, length)
-
 
         # Рисование сохраненных фигур
         for index, shape in enumerate(self.shapes):
@@ -371,16 +370,17 @@ class Canvas(QWidget):
         y_pos = self.height() - 10  # Отступ 10 пикселей от нижнего края
 
         painter.drawText(int(x_pos), int(y_pos), mode_text)
+        
+        # Отображение информации о выделенном элементе
+        if self.highlighted_shape_index is not None:
+            if 0 <= self.highlighted_shape_index < len(self.shapes):
+                highlight_text = f"Выбран объект {self.highlighted_shape_index + 1}"
+                highlight_text_width = metrics.horizontalAdvance(highlight_text)
+                highlight_x_pos = 10  # Отступ 10 пикселей от левого края
+                highlight_y_pos = 20  # Отступ от верхнего края
+                painter.drawText(int(highlight_x_pos), int(highlight_y_pos), highlight_text)
 
         painter.restore()
-        
-        # After drawing all shapes, highlight the selected one
-        if self.highlighted_shape_index is not None:
-            painter.save()
-            painter.setPen(QPen(Qt.red, self.lineThickness + 2, Qt.SolidLine))
-            shape = self.shapes[self.highlighted_shape_index]
-            shape.draw(painter)
-            painter.restore()
 
     # Метод для получения названия режима рисования
     def get_drawing_mode_text(self):
@@ -827,13 +827,15 @@ class Canvas(QWidget):
                 self.current_shape.editing_index = None
                 self.current_shape.highlight_index = None
             self.update()
-            self.parent.statusBar.showMessage('Отмена текущего построения')
+            if hasattr(self, 'parent') and hasattr(self.parent, 'statusBar'):
+                self.parent.statusBar.showMessage('Отмена текущего построения')
 
         if event.key() == Qt.Key_Z:
             if self.shapes:
                 self.shapes.pop()
             self.update()
-            self.parent.statusBar.showMessage('Отмена предыдущего построения')
+            if hasattr(self, 'parent') and hasattr(self.parent, 'statusBar'):
+                self.parent.statusBar.showMessage('Отмена предыдущего построения')
             self.zPressed.emit()
 
         if event.key() == Qt.Key_V:
@@ -842,11 +844,13 @@ class Canvas(QWidget):
         elif event.key() == Qt.Key_Right and event.modifiers() & Qt.ControlModifier:
             self.rotation += 5  # Поворот против часовой стрелке
             self.update()
-            self.parent.statusBar.showMessage('Поворот по часовой стрелке')
+            if hasattr(self, 'parent') and hasattr(self.parent, 'statusBar'):
+                self.parent.statusBar.showMessage('Поворот по часовой стрелке')
         elif event.key() == Qt.Key_Left and event.modifiers() & Qt.ControlModifier:
             self.rotation -= 5  # Поворот по часовой стрелки
             self.update()
-            self.parent.statusBar.showMessage('Поворот против часовой стрелки')
+            if hasattr(self, 'parent') and hasattr(self.parent, 'statusBar'):
+                self.parent.statusBar.showMessage('Поворот против часовой стрелки')
         elif event.key() == Qt.Key_M:
             self.show_axes = not self.show_axes  # Переключаем отображение осей
             self.update()
@@ -858,3 +862,14 @@ class Canvas(QWidget):
             QMessageBox.information(self, "Система координат ввода", "Ввод координат будет производиться в Полярной системе.")
         else:
             super().keyPressEvent(event)
+            
+    def _compute_dash_pattern(self):
+        """Вспомогательный метод для создания шаблона штриховой линии"""
+        pattern = []
+        if self.lineType == 'dash':
+            pattern = [10, 5]
+        elif self.lineType == 'dash_dot':
+            pattern = [10, 5, 2, 5]
+        elif self.lineType == 'dash_dot_dot':
+            pattern = [10, 5, 2, 5, 2, 5]
+        return pattern
