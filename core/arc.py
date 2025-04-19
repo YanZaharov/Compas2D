@@ -36,8 +36,18 @@ class ArcByThreePoints(Geometry):
         start_angle = math.degrees(math.atan2(A.y() - center.y(), A.x() - center.x()))
         mid_angle = math.degrees(math.atan2(B.y() - center.y(), B.x() - center.x()))
         end_angle = math.degrees(math.atan2(C.y() - center.y(), C.x() - center.x()))
-        start_angle, mid_angle, end_angle = (start_angle + 360) % 360, (mid_angle + 360) % 360, (end_angle + 360) % 360
-        span_angle = (end_angle - start_angle) % 360 if ((end_angle - start_angle + 360) % 360) >= ((mid_angle - start_angle + 360) % 360) else (end_angle - start_angle) % 360 - 360
+
+        # Нормализация углов
+        start_angle = (start_angle + 360) % 360
+        end_angle = (end_angle + 360) % 360
+        mid_angle = (mid_angle + 360) % 360
+
+        # Вычисление span_angle с учётом направления (против часовой стрелки)
+        span_angle = (end_angle - start_angle + 360) % 360
+        # Проверка направления через среднюю точку
+        if (mid_angle - start_angle + 360) % 360 > span_angle:
+            span_angle = 360 - span_angle  # Дуга идёт через другую сторону
+
         return center, radius, start_angle, span_angle
 
 class ArcByRadiusChord(Geometry):
@@ -55,30 +65,21 @@ class ArcByRadiusChord(Geometry):
         painter.drawArc(rect, int(-start_angle * 16), int(-span_angle * 16))
 
     def calculate_arc(self):
-        # Вычисляем радиус
         radius = math.hypot(self.radius_point.x() - self.center.x(), 
                         self.radius_point.y() - self.center.y())
-        
-        # Вычисляем углы в градусах
         start_angle = math.degrees(math.atan2(self.radius_point.y() - self.center.y(), 
                                             self.radius_point.x() - self.center.x()))
         end_angle = math.degrees(math.atan2(self.chord_point.y() - self.center.y(), 
                                         self.chord_point.x() - self.center.x()))
         
-        # Нормализуем углы в положительный диапазон
         start_angle = (start_angle + 360) % 360
         end_angle = (end_angle + 360) % 360
         
-        # Вычисляем угол дуги
-        span_angle = end_angle - start_angle
-        if span_angle <= 0:
-            span_angle += 360
-        
-        # Если дуга должна быть больше 180 градусов
-        if math.hypot(self.chord_point.x() - self.radius_point.x(),
-                    self.chord_point.y() - self.radius_point.y()) > radius * math.sqrt(2):
-            if span_angle < 180:
-                span_angle = 360 - span_angle
+        span_angle = (end_angle - start_angle + 360) % 360
+        chord_length = math.hypot(self.chord_point.x() - self.radius_point.x(),
+                                self.chord_point.y() - self.radius_point.y())
+        if chord_length > radius * math.sqrt(2) and span_angle < 180:
+            span_angle = 360 - span_angle  # Выбираем длинную дугу
         
         return radius, start_angle, span_angle
 
